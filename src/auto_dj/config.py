@@ -25,7 +25,7 @@ class PathsConfig:
 class DatabaseConfig:
     """Connection settings for PostgreSQL."""
 
-    dsn: str = "postgresql+psycopg://auto_dj:change-me@localhost:5432/auto_dj"
+    dsn: str = "postgresql+psycopg://auto-dj:auto-dj@localhost:5432/auto_dj"
     echo: bool = False
 
 

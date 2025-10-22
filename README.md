@@ -17,6 +17,7 @@ Programmierungs-Entwurf für den Auto-DJ mit Daslight-5-Integration.
 
 ```bash
 # Abhängigkeiten installieren, Datenbanktabellen erstellen und Standard-Admin anlegen
+# (legt standardmäßig den PostgreSQL-User "auto-dj" mit dem Passwort "auto-dj" an)
 ./scripts/install.sh
 
 # Dienste starten (Beispiel)
@@ -25,6 +26,11 @@ python -m auto_dj engine # Startet den Audio-Engine-Skeleton
 python -m auto_dj brain  # Initialisiert die Brain-Komponenten
 ```
 
-Vor dem ersten Start sollten PostgreSQL-Zugangsdaten im Konfigurationsmodul angepasst und
-abhängige Dienste bereitgestellt werden. Der initiale Admin-Login lautet `admin` / `Admin123`
-und kann nach der Anmeldung im Admin-Frontend (`/admin`) geändert werden.
+Der Installer exportiert automatisch eine `AUTO_DJ_DATABASE_DSN`, sodass sich der Python-Code
+mit dem Datenbank-Benutzer `auto-dj` und dem gleichnamigen Passwort verbindet. Host, Port,
+Datenbankname, Benutzername und Passwort können bei Bedarf über die Umgebungsvariablen
+`AUTO_DJ_DB_HOST`, `AUTO_DJ_DB_PORT`, `AUTO_DJ_DB_NAME`, `AUTO_DJ_DB_USER` und
+`AUTO_DJ_DB_PASSWORD` vor dem Aufruf von `install.sh` überschrieben werden.
+
+Der initiale Admin-Login lautet `admin` / `Admin123` und kann nach der Anmeldung im
+Admin-Frontend (`/admin`) geändert werden.
