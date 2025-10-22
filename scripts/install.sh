@@ -26,13 +26,19 @@ DB_PORT="${AUTO_DJ_DB_PORT:-5432}"
 
 export AUTO_DJ_DATABASE_DSN="postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
 
-# Ensure the PostgreSQL role and database exist before bootstrapping tables.
-SETUP_ARGS=("--ensure-database")
-if [ -n "${AUTO_DJ_SUPERUSER_DSN:-}" ]; then
-  SETUP_ARGS+=("--database-superuser-dsn" "${AUTO_DJ_SUPERUSER_DSN}")
-fi
+# Ensure the PostgreSQL role and database exist before bootstrapping tables unless
+# explicitly skipped by the caller (useful when the role/database are pre-provisioned).
+SKIP_DB_INIT="${AUTO_DJ_SKIP_DB_INIT:-0}"
+if [ "${SKIP_DB_INIT}" = "1" ]; then
+  echo "[install] Skipping database provisioning (AUTO_DJ_SKIP_DB_INIT=1)"
+else
+  SETUP_ARGS=("--ensure-database")
+  if [ -n "${AUTO_DJ_SUPERUSER_DSN:-}" ]; then
+    SETUP_ARGS+=("--database-superuser-dsn" "${AUTO_DJ_SUPERUSER_DSN}")
+  fi
 
-python -m auto_dj.setup "${SETUP_ARGS[@]}"
+  python -m auto_dj.setup "${SETUP_ARGS[@]}"
+fi
 
 # Initialize the database schema and ensure the default admin account exists.
 python -m auto_dj.setup --init-db --ensure-admin

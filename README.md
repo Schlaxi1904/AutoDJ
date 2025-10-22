@@ -18,6 +18,12 @@ Programmierungs-Entwurf für den Auto-DJ mit Daslight-5-Integration.
 ```bash
 # Abhängigkeiten installieren, Datenbanktabellen erstellen und Standard-Admin anlegen
 # (legt standardmäßig den PostgreSQL-User "auto-dj" mit dem Passwort "auto-dj" an)
+#
+# Falls PostgreSQL Superuser-Zugangsdaten erforderlich sind, vorab setzen:
+# export AUTO_DJ_SUPERUSER_DSN="postgresql://postgres:<PASSWORD>@localhost:5432/postgres"
+#
+# Ist die Datenbank bereits provisioniert, kann der Rollendialog übersprungen werden:
+# export AUTO_DJ_SKIP_DB_INIT=1
 ./scripts/install.sh
 
 # Dienste starten (Beispiel)
