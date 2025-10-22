@@ -76,14 +76,16 @@ def ensure_database(config: AutoDjConfig, superuser_dsn: str | None) -> None:
                 cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (user,))
                 if cur.fetchone() is None:
                     cur.execute(
-                        sql.SQL("CREATE ROLE {} LOGIN PASSWORD %s").format(sql.Identifier(user)),
-                        (password,),
+                        sql.SQL("CREATE ROLE {} LOGIN PASSWORD {}").format(
+                            sql.Identifier(user), sql.Literal(password)
+                        )
                     )
                     print(f"Created role '{user}'")
                 else:
                     cur.execute(
-                        sql.SQL("ALTER ROLE {} WITH LOGIN PASSWORD %s").format(sql.Identifier(user)),
-                        (password,),
+                        sql.SQL("ALTER ROLE {} WITH LOGIN PASSWORD {}").format(
+                            sql.Identifier(user), sql.Literal(password)
+                        )
                     )
                     print(f"Updated password for role '{user}'")
 
