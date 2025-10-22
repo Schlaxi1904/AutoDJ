@@ -78,6 +78,7 @@ class WebSecurityConfig:
 
     public_enabled: bool = False
     ssl_enabled: bool = False
+    session_secret: str = "auto-dj-development-secret"
 
 
 @dataclass(frozen=True)

@@ -112,6 +112,19 @@ class AuditLog(Base):
     payload_json: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
 
+class AdminUser(Base):
+    """Administrative accounts for the control dashboard."""
+
+    __tablename__ = "admin_users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
 __all__ = [
     "Base",
     "Track",
@@ -121,4 +134,5 @@ __all__ = [
     "Setting",
     "BlacklistEntry",
     "AuditLog",
+    "AdminUser",
 ]

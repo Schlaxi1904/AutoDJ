@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Auto-DJ Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}" />
+  </head>
+  <body class="admin-body">
+    <main class="admin-shell">
+      <header class="admin-header">
+        <div>
+          <h1>Admin-Kontrollzentrum</h1>
+          <p>Verwalte sichere Zugänge und passe Passwörter flexibel an.</p>
+        </div>
+        <div class="admin-session" id="admin-session">
+          {% if admin %}
+          <span class="badge badge--green">Angemeldet als {{ admin.username }}</span>
+          <button class="button button--ghost" id="logout-button" type="button">Abmelden</button>
+          {% else %}
+          <span class="badge">Nicht angemeldet</span>
+          {% endif %}
+        </div>
+      </header>
+
+      <section class="admin-card" id="login-card" {% if admin %}hidden{% endif %}>
+        <h2>Anmeldung</h2>
+        <form class="admin-form" id="login-form">
+          <label class="input" for="login-username">
+            <span class="input__label">Benutzername</span>
+            <input id="login-username" name="username" type="text" placeholder="admin" required />
+          </label>
+          <label class="input" for="login-password">
+            <span class="input__label">Passwort</span>
+            <input id="login-password" name="password" type="password" required />
+          </label>
+          <button class="button" type="submit">Anmelden</button>
+        </form>
+        <p class="admin-hint">Standard-Login: <code>admin / Admin123</code> &ndash; bitte direkt ändern.</p>
+      </section>
+
+      <section class="admin-card" id="accounts-card" {% if not admin %}hidden{% endif %}>
+        <h2>Admin-Passwörter</h2>
+        <p class="admin-card__lead">
+          Hier kannst du alle Admin-Passwörter verwalten. Bitte wähle starke, eindeutige Passwörter.
+        </p>
+        <div class="admin-accounts" id="accounts-list" role="list"></div>
+      </section>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden>
+      <span id="toast-message"></span>
+    </div>
+
+    <script src="{{ url_for('static', path='admin.js') }}" type="module"></script>
+  </body>
+</html>
