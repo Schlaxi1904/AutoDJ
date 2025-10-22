@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Auto-DJ Control</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}" />
+  </head>
+  <body>
+    <div class="background-veil"></div>
+    <main class="shell">
+      <header class="hero">
+        <div>
+          <h1>Auto-DJ</h1>
+          <p>Musiksteuerung, Wünsche und Licht im Griff – alles in einem Dashboard.</p>
+        </div>
+        <div class="status-badges">
+          <span class="badge badge--green">Live</span>
+          <span class="badge badge--purple">OSC Sync</span>
+        </div>
+      </header>
+
+      <section class="panel now-playing" aria-labelledby="now-playing-title">
+        <div class="panel__header">
+          <h2 id="now-playing-title">Now Playing</h2>
+          <span class="tempo" id="now-playing-bpm">-- BPM</span>
+        </div>
+        {% if now_playing %}
+        <article class="track-card" data-track-id="{{ now_playing.track.id }}">
+          <div class="track-card__art" aria-hidden="true">
+            <div class="placeholder-art">🎵</div>
+          </div>
+          <div class="track-card__meta">
+            <h3 class="track-card__title">{{ now_playing.track.title }}</h3>
+            <p class="track-card__artist">{{ now_playing.track.artist }}</p>
+            <dl class="track-card__stats">
+              <div>
+                <dt>Genre</dt>
+                <dd>{{ now_playing.track.genre }}</dd>
+              </div>
+              <div>
+                <dt>Key</dt>
+                <dd>{{ now_playing.track.key_camelot }}</dd>
+              </div>
+              <div>
+                <dt>Energie</dt>
+                <dd>{{ '%.0f' | format(now_playing.track.energy_avg * 100) }}%</dd>
+              </div>
+            </dl>
+          </div>
+        </article>
+        {% else %}
+        <div class="empty-state">
+          <p>Noch kein Track aktiv. Sobald der Mix startet, erscheint er hier.</p>
+        </div>
+        {% endif %}
+      </section>
+
+      <section class="panel queue" aria-labelledby="queue-title">
+        <div class="panel__header">
+          <h2 id="queue-title">Queue</h2>
+          <span class="panel__meta"
+            >Freie Slots: <strong id="queue-remaining">{{ queue_status.remaining_slots }}</strong></span
+          >
+        </div>
+        <ul class="queue-list" id="queue-list">
+          {% for entry in queue_status.entries %}
+          <li class="queue-item" data-entry-id="{{ entry.id }}">
+            <div>
+              <span class="queue-item__title">{{ entry.track.title }}</span>
+              <span class="queue-item__artist">{{ entry.track.artist }}</span>
+            </div>
+            <div class="queue-item__meta">
+              <span class="queue-item__badge queue-item__badge--{{ entry.source }}">{{ entry.source }}</span>
+              <span class="queue-item__time">{{ (entry.track.duration_ms // 60000) | int }}:{% set seconds = (entry.track.duration_ms // 1000) % 60 %}{% if seconds < 10 %}0{% endif %}{{ seconds }}</span>
+            </div>
+          </li>
+          {% else %}
+          <li class="empty-state">Noch keine Titel in der Queue.</li>
+          {% endfor %}
+        </ul>
+      </section>
+
+      <section class="panel request" aria-labelledby="request-title">
+        <div class="panel__header">
+          <h2 id="request-title">Wunsch abgeben</h2>
+          <p class="panel__meta">Finde deinen Lieblingssong und reiche ihn mit einem Klick ein.</p>
+        </div>
+        <form class="request-form" id="request-form" autocomplete="off">
+          <label class="input" for="request-query">
+            <span class="input__label">Suche Künstler oder Titel</span>
+            <input id="request-query" name="query" type="search" placeholder="z. B. Purple Disco Machine" required />
+          </label>
+          <div class="search-status" id="search-status" role="status" aria-live="polite"></div>
+        </form>
+        <ul class="search-results" id="search-results" aria-live="polite"></ul>
+      </section>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden>
+      <span id="toast-message"></span>
+    </div>
+
+    <script src="{{ url_for('static', path='app.js') }}" type="module"></script>
+  </body>
+</html>
