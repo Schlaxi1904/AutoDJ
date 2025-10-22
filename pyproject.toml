@@ -17,6 +17,7 @@ dependencies = [
     "itsdangerous",
     "jinja2>=3.1",
     "python-multipart",
+    "psutil",
 ]
 
 [project.optional-dependencies]

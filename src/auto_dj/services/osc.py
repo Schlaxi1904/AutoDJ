@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Dict
 
 from pythonosc.udp_client import SimpleUDPClient
 
@@ -45,3 +44,9 @@ class OscService:
         path = f"/cue/99/{scene}"
         logger.info("Triggering superscene", extra={"path": path, "start": start})
         self._client.send_message(path, 1 if start else 0)
+
+    def reset_bar(self) -> None:
+        """Send the Daslight bar reset command for beat-aligned recovery."""
+
+        logger.info("Resetting OSC bar alignment")
+        self._client.send_message("/bar/reset", 1)

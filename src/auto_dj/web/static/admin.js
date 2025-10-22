@@ -1,19 +1,79 @@
 const loginForm = document.getElementById("login-form");
 const loginCard = document.getElementById("login-card");
-const accountsCard = document.getElementById("accounts-card");
+const controlCard = document.getElementById("control-card");
 const accountsList = document.getElementById("accounts-list");
-const dashboardCard = document.getElementById("dashboard-card");
-const dashboardNowPlaying = document.getElementById("dashboard-now-playing");
-const dashboardRemaining = document.getElementById("dashboard-remaining");
-const dashboardQueue = document.getElementById("dashboard-queue");
-const refreshDashboardButton = document.getElementById("refresh-dashboard");
 const logoutButton = document.getElementById("logout-button");
 const toast = document.getElementById("toast");
 const toastMessage = document.getElementById("toast-message");
 
-let dashboardInterval = null;
+const tabButtons = Array.from(document.querySelectorAll(".tab-button"));
+const tabPanels = Array.from(document.querySelectorAll(".tab-panel"));
+
+const systemNowPlaying = document.getElementById("system-now-playing");
+const systemNextTrack = document.getElementById("system-next-track");
+const systemQueue = document.getElementById("system-queue");
+const systemRemaining = document.getElementById("system-remaining");
+const systemRefreshButton = document.getElementById("system-refresh");
+const systemCpu = document.getElementById("system-cpu");
+const systemRam = document.getElementById("system-ram");
+const systemTemp = document.getElementById("system-temp");
+const systemXruns = document.getElementById("system-xruns");
+const systemOsc = document.getElementById("system-osc");
+const systemNetwork = document.getElementById("system-network");
+const systemTogglesForm = document.getElementById("system-toggles-form");
+
+const toggleFog = document.getElementById("toggle-fog");
+const toggleSuperscenes = document.getElementById("toggle-superscenes");
+const togglePublic = document.getElementById("toggle-public");
+const lightFogToggle = document.getElementById("light-fog");
+const lightSuperscenesToggle = document.getElementById("light-superscenes");
+
+const audioScanButton = document.getElementById("audio-scan");
+const audioForm = document.getElementById("audio-output-form");
+const audioDeviceSelect = document.getElementById("audio-device-select");
+
+const mixerForm = document.getElementById("mixer-form");
+const mixerCrossfade = document.getElementById("mixer-crossfade");
+const mixerVolumeCurve = document.getElementById("mixer-volume-curve");
+const mixerBassHz = document.getElementById("mixer-bass-hz");
+const mixerBassCurve = document.getElementById("mixer-bass-curve");
+const mixerFilterHp = document.getElementById("mixer-filter-hp");
+const mixerFilterLp = document.getElementById("mixer-filter-lp");
+const mixerTimeStretch = document.getElementById("mixer-time-stretch");
+
+const libraryForm = document.getElementById("library-form");
+const libraryTrackCount = document.getElementById("library-track-count");
+const libraryQuarantine = document.getElementById("library-quarantine");
+const libraryMusicPath = document.getElementById("library-music-path");
+const libraryDatabaseDsn = document.getElementById("library-database-dsn");
+
+const lightForm = document.getElementById("light-form");
+const lightHost = document.getElementById("light-host");
+const lightPort = document.getElementById("light-port");
+const lightResyncButton = document.getElementById("light-resync");
+
+const analysisForm = document.getElementById("analysis-form");
+const analysisKey = document.getElementById("analysis-key");
+const analysisBpm = document.getElementById("analysis-bpm");
+const analysisEnergy = document.getElementById("analysis-energy");
+const analysisGenre = document.getElementById("analysis-genre");
+const analysisRecency = document.getElementById("analysis-recency");
+const analysisRequest = document.getElementById("analysis-request");
+const analysisSpacing = document.getElementById("analysis-spacing");
+
+const diagnosticsRuntime = document.getElementById("diagnostics-runtime");
+const diagnosticsPersistent = document.getElementById("diagnostics-persistent");
+const diagnosticsCache = document.getElementById("diagnostics-cache");
+const diagnosticsConfig = document.getElementById("diagnostics-config");
+const diagnosticsLastError = document.getElementById("diagnostics-last-error");
+
+let systemInterval = null;
+let togglesUpdating = false;
 
 function showToast(message, variant = "info") {
+  if (!toast || !toastMessage) {
+    return;
+  }
   toastMessage.textContent = message;
   toast.dataset.variant = variant;
   toast.hidden = false;
@@ -23,20 +83,92 @@ function showToast(message, variant = "info") {
   }, 3500);
 }
 
-async function fetchAccounts() {
+async function apiFetch(url, options = {}) {
   try {
-    const response = await fetch("/admin/accounts");
-    if (!response.ok) {
-      throw new Error("Laden der Accounts fehlgeschlagen");
+    const response = await fetch(url, options);
+    if (response.status === 401) {
+      setAuthenticated(false);
+      throw new Error("Session abgelaufen. Bitte erneut anmelden.");
     }
-    const accounts = await response.json();
-    renderAccounts(accounts);
+    return response;
   } catch (error) {
-    showToast(error.message || "Unbekannter Fehler", "error");
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Netzwerkfehler");
+  }
+}
+
+function activateTab(target) {
+  tabButtons.forEach((button) => {
+    const isActive = button.dataset.tabTarget === target;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+  tabPanels.forEach((panel) => {
+    const isActive = panel.dataset.tab === target;
+    panel.classList.toggle("is-active", isActive);
+    if (isActive) {
+      panel.removeAttribute("hidden");
+    } else {
+      panel.setAttribute("hidden", "true");
+    }
+  });
+}
+
+function stopSystemUpdates() {
+  if (systemInterval) {
+    clearInterval(systemInterval);
+    systemInterval = null;
+  }
+}
+
+function startSystemUpdates() {
+  stopSystemUpdates();
+  fetchSystemOverview();
+  systemInterval = setInterval(fetchSystemOverview, 5000);
+}
+
+function clearSystemCards() {
+  if (systemNowPlaying) {
+    systemNowPlaying.innerHTML = "<p class=\"admin-empty\">Keine Wiedergabe aktiv.</p>";
+  }
+  if (systemNextTrack) {
+    systemNextTrack.innerHTML = "";
+  }
+  if (systemQueue) {
+    systemQueue.innerHTML = "";
+  }
+  if (systemRemaining) {
+    systemRemaining.textContent = "--";
+  }
+}
+
+function setAuthenticated(isAuthenticated) {
+  if (loginCard) {
+    loginCard.hidden = isAuthenticated;
+  }
+  if (controlCard) {
+    controlCard.hidden = !isAuthenticated;
+  }
+
+  if (isAuthenticated) {
+    activateTab("system");
+    loadControlCenter();
+    startSystemUpdates();
+  } else {
+    stopSystemUpdates();
+    clearSystemCards();
+    if (accountsList) {
+      accountsList.innerHTML = "";
+    }
   }
 }
 
 function renderAccounts(accounts) {
+  if (!accountsList) {
+    return;
+  }
   accountsList.innerHTML = "";
   if (!accounts.length) {
     const empty = document.createElement("p");
@@ -77,7 +209,7 @@ function renderAccounts(accounts) {
       const formData = new FormData(form);
       const newPassword = formData.get("new_password");
       try {
-        const response = await fetch(`/admin/accounts/${account.id}/password`, {
+        const response = await apiFetch(`/admin/accounts/${account.id}/password`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -101,12 +233,15 @@ function renderAccounts(accounts) {
 }
 
 function renderNowPlaying(entry) {
-  dashboardNowPlaying.innerHTML = "";
+  if (!systemNowPlaying) {
+    return;
+  }
+  systemNowPlaying.innerHTML = "";
   if (!entry) {
     const empty = document.createElement("p");
     empty.className = "admin-empty";
     empty.textContent = "Keine Wiedergabe aktiv.";
-    dashboardNowPlaying.appendChild(empty);
+    systemNowPlaying.appendChild(empty);
     return;
   }
 
@@ -124,7 +259,24 @@ function renderNowPlaying(entry) {
       <div><dt>BPM</dt><dd>${Math.round(entry.track.bpm)}</dd></div>
     </dl>
   `;
-  dashboardNowPlaying.appendChild(card);
+  systemNowPlaying.appendChild(card);
+}
+
+function renderNext(entry) {
+  if (!systemNextTrack) {
+    return;
+  }
+  systemNextTrack.innerHTML = "";
+  if (!entry) {
+    const empty = document.createElement("p");
+    empty.className = "admin-empty";
+    empty.textContent = "Kein nächster Titel geplant.";
+    systemNextTrack.appendChild(empty);
+    return;
+  }
+  const wrapper = document.createElement("p");
+  wrapper.innerHTML = `<strong>Nächster Track:</strong> ${entry.track.title} – ${entry.track.artist}`;
+  systemNextTrack.appendChild(wrapper);
 }
 
 function createQueueAction(label, action) {
@@ -137,12 +289,15 @@ function createQueueAction(label, action) {
 }
 
 function renderQueue(entries) {
-  dashboardQueue.innerHTML = "";
+  if (!systemQueue) {
+    return;
+  }
+  systemQueue.innerHTML = "";
   if (!entries.length) {
     const empty = document.createElement("li");
     empty.className = "admin-empty";
     empty.textContent = "Keine Einträge in der Queue.";
-    dashboardQueue.appendChild(empty);
+    systemQueue.appendChild(empty);
     return;
   }
 
@@ -162,61 +317,236 @@ function renderQueue(entries) {
 
     const actions = document.createElement("div");
     actions.className = "dashboard-queue__actions";
-    const playButton = createQueueAction("Als Nächstes", "play");
-    const promoteButton = createQueueAction("Priorisieren", "promote");
-    const deleteButton = createQueueAction("Entfernen", "delete");
-    actions.append(playButton, promoteButton, deleteButton);
+    actions.append(
+      createQueueAction("Als Nächstes", "play"),
+      createQueueAction("Priorisieren", "promote"),
+      createQueueAction("Entfernen", "delete"),
+    );
     item.appendChild(actions);
 
-    dashboardQueue.appendChild(item);
+    systemQueue.appendChild(item);
   }
 }
 
-async function fetchDashboard() {
+function updateToggleInputs(toggles) {
+  togglesUpdating = true;
+  if (toggleFog) {
+    toggleFog.checked = Boolean(toggles.fog_enabled);
+  }
+  if (toggleSuperscenes) {
+    toggleSuperscenes.checked = Boolean(toggles.superscenes_enabled);
+  }
+  if (togglePublic) {
+    togglePublic.checked = Boolean(toggles.public_enabled);
+  }
+  if (lightFogToggle) {
+    lightFogToggle.checked = Boolean(toggles.fog_enabled);
+  }
+  if (lightSuperscenesToggle) {
+    lightSuperscenesToggle.checked = Boolean(toggles.superscenes_enabled);
+  }
+  togglesUpdating = false;
+}
+
+function renderSystemOverview(data) {
+  renderNowPlaying(data.now_playing);
+  renderNext(data.next_entry);
+  renderQueue(data.queue || []);
+  if (systemRemaining) {
+    systemRemaining.textContent = data.remaining_slots;
+  }
+  if (systemCpu) {
+    systemCpu.textContent =
+      typeof data.cpu_percent === "number" ? `${data.cpu_percent.toFixed(1)} %` : "--";
+  }
+  if (systemRam) {
+    systemRam.textContent =
+      typeof data.memory_percent === "number" ? `${data.memory_percent.toFixed(1)} %` : "--";
+  }
+  if (systemTemp) {
+    systemTemp.textContent =
+      typeof data.temperature_c === "number" ? `${data.temperature_c.toFixed(1)} °C` : "--";
+  }
+  if (systemXruns) {
+    systemXruns.textContent = data.xrun_count;
+  }
+  if (systemOsc) {
+    systemOsc.textContent = data.osc_connected ? "Aktiv" : "Timeout";
+  }
+  if (systemNetwork) {
+    systemNetwork.textContent = data.network_mode;
+  }
+  if (data.toggles) {
+    updateToggleInputs(data.toggles);
+  }
+}
+
+async function fetchSystemOverview() {
   try {
-    const response = await fetch("/admin/state");
+    const response = await apiFetch("/admin/system/overview");
     if (!response.ok) {
-      throw new Error("Dashboard konnte nicht geladen werden");
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.detail || "Systemstatus konnte nicht geladen werden");
     }
     const data = await response.json();
-    dashboardRemaining.textContent = data.remaining_slots;
-    renderNowPlaying(data.now_playing);
-    renderQueue(data.queue);
+    renderSystemOverview(data);
   } catch (error) {
     showToast(error.message || "Unbekannter Fehler", "error");
   }
 }
 
-function stopDashboardUpdates() {
-  if (dashboardInterval) {
-    clearInterval(dashboardInterval);
-    dashboardInterval = null;
+async function fetchAccounts() {
+  try {
+    const response = await apiFetch("/admin/accounts");
+    if (!response.ok) {
+      throw new Error("Laden der Accounts fehlgeschlagen");
+    }
+    const accounts = await response.json();
+    renderAccounts(accounts);
+  } catch (error) {
+    showToast(error.message || "Unbekannter Fehler", "error");
   }
 }
 
-function startDashboardUpdates() {
-  stopDashboardUpdates();
-  fetchDashboard();
-  dashboardInterval = setInterval(fetchDashboard, 5000);
+function populateSelect(select, items, valueKey, labelKey, activeValue) {
+  select.innerHTML = "";
+  for (const item of items) {
+    const option = document.createElement("option");
+    option.value = item[valueKey];
+    option.textContent = item[labelKey];
+    select.appendChild(option);
+  }
+  if (activeValue) {
+    select.value = activeValue;
+  }
 }
 
-function setAuthenticated(isAuthenticated) {
-  if (!loginCard || !accountsCard || !dashboardCard) {
+async function fetchAudioOutput(showToastMessage = false) {
+  if (!audioDeviceSelect) {
     return;
   }
-  loginCard.hidden = isAuthenticated;
-  accountsCard.hidden = !isAuthenticated;
-  dashboardCard.hidden = !isAuthenticated;
-
-  if (isAuthenticated) {
-    fetchAccounts();
-    startDashboardUpdates();
-  } else {
-    stopDashboardUpdates();
-    accountsList.innerHTML = "";
-    dashboardQueue.innerHTML = "";
-    dashboardNowPlaying.innerHTML = "";
+  try {
+    const response = await apiFetch("/admin/audio/output");
+    if (!response.ok) {
+      throw new Error("Audio-Ausgänge konnten nicht geladen werden");
+    }
+    const data = await response.json();
+    populateSelect(audioDeviceSelect, data.devices, "identifier", "label", data.active_device_id);
+    if (showToastMessage) {
+      showToast("Geräteliste aktualisiert", "success");
+    }
+  } catch (error) {
+    showToast(error.message || "Unbekannter Fehler", "error");
   }
+}
+
+async function fetchMixerSettings() {
+  if (!mixerForm) {
+    return;
+  }
+  try {
+    const response = await apiFetch("/admin/audio/mixer");
+    if (!response.ok) {
+      throw new Error("Mixer-Einstellungen konnten nicht geladen werden");
+    }
+    const data = await response.json();
+    if (mixerCrossfade) mixerCrossfade.value = data.crossfade_seconds;
+    if (mixerVolumeCurve) mixerVolumeCurve.value = data.volume_curve;
+    if (mixerBassHz) mixerBassHz.value = data.bass_crossover_hz;
+    if (mixerBassCurve) mixerBassCurve.value = data.bass_curve;
+    if (mixerFilterHp) mixerFilterHp.checked = data.filter_hp_to_lp;
+    if (mixerFilterLp) mixerFilterLp.checked = data.filter_lp_to_hp;
+    if (mixerTimeStretch) mixerTimeStretch.value = data.time_stretch_mode;
+  } catch (error) {
+    showToast(error.message || "Unbekannter Fehler", "error");
+  }
+}
+
+async function fetchLibrarySettings() {
+  try {
+    const response = await apiFetch("/admin/library/settings");
+    if (!response.ok) {
+      throw new Error("Bibliotheksdaten konnten nicht geladen werden");
+    }
+    const data = await response.json();
+    if (libraryTrackCount) libraryTrackCount.textContent = data.track_count;
+    if (libraryQuarantine) libraryQuarantine.textContent = data.quarantine_path;
+    if (libraryMusicPath) libraryMusicPath.value = data.music_path;
+    if (libraryDatabaseDsn) libraryDatabaseDsn.value = data.database_dsn;
+  } catch (error) {
+    showToast(error.message || "Unbekannter Fehler", "error");
+  }
+}
+
+async function fetchLightSettings() {
+  try {
+    const response = await apiFetch("/admin/light/settings");
+    if (!response.ok) {
+      throw new Error("Lichtsteuerung konnte nicht geladen werden");
+    }
+    const data = await response.json();
+    if (lightHost) lightHost.value = data.target_host;
+    if (lightPort) lightPort.value = data.target_port;
+    updateToggleInputs({
+      fog_enabled: data.fog_enabled,
+      superscenes_enabled: data.superscenes_enabled,
+      public_enabled: togglePublic ? togglePublic.checked : false,
+    });
+  } catch (error) {
+    showToast(error.message || "Unbekannter Fehler", "error");
+  }
+}
+
+async function fetchAnalysisSettings() {
+  if (!analysisForm) {
+    return;
+  }
+  try {
+    const response = await apiFetch("/admin/analysis/settings");
+    if (!response.ok) {
+      throw new Error("Analyse-Parameter konnten nicht geladen werden");
+    }
+    const data = await response.json();
+    if (analysisKey) analysisKey.value = data.key_weight;
+    if (analysisBpm) analysisBpm.value = data.bpm_weight;
+    if (analysisEnergy) analysisEnergy.value = data.energy_weight;
+    if (analysisGenre) analysisGenre.value = data.genre_weight;
+    if (analysisRecency) analysisRecency.value = data.recency_weight;
+    if (analysisRequest) analysisRequest.value = data.request_weight;
+    if (analysisSpacing) analysisSpacing.value = data.soft_spacing;
+  } catch (error) {
+    showToast(error.message || "Unbekannter Fehler", "error");
+  }
+}
+
+async function fetchDiagnostics() {
+  try {
+    const response = await apiFetch("/admin/logs/diagnostics");
+    if (!response.ok) {
+      throw new Error("Diagnoseinformationen konnten nicht geladen werden");
+    }
+    const data = await response.json();
+    if (diagnosticsRuntime) diagnosticsRuntime.textContent = data.runtime_log_path;
+    if (diagnosticsPersistent) diagnosticsPersistent.textContent = data.persistent_log_path;
+    if (diagnosticsCache) diagnosticsCache.textContent = data.cache_path;
+    if (diagnosticsConfig) diagnosticsConfig.textContent = data.config_path;
+    if (diagnosticsLastError) diagnosticsLastError.textContent = data.last_error || "Keine Einträge";
+  } catch (error) {
+    showToast(error.message || "Unbekannter Fehler", "error");
+  }
+}
+
+async function loadControlCenter() {
+  await Promise.all([
+    fetchSystemOverview(),
+    fetchAccounts(),
+    fetchAudioOutput(),
+    fetchMixerSettings(),
+    fetchLibrarySettings(),
+    fetchLightSettings(),
+    fetchAnalysisSettings(),
+    fetchDiagnostics(),
+  ]);
 }
 
 if (loginForm) {
@@ -225,7 +555,7 @@ if (loginForm) {
     const formData = new FormData(loginForm);
     const payload = Object.fromEntries(formData.entries());
     try {
-      const response = await fetch("/admin/login", {
+      const response = await apiFetch("/admin/login", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -247,7 +577,7 @@ if (loginForm) {
 if (logoutButton) {
   logoutButton.addEventListener("click", async () => {
     try {
-      await fetch("/admin/logout", { method: "POST" });
+      await apiFetch("/admin/logout", { method: "POST" });
     } finally {
       showToast("Abgemeldet", "info");
       setAuthenticated(false);
@@ -256,18 +586,25 @@ if (logoutButton) {
   });
 }
 
-if (dashboardCard && !dashboardCard.hasAttribute("hidden")) {
-  setAuthenticated(true);
-}
-
-if (refreshDashboardButton) {
-  refreshDashboardButton.addEventListener("click", () => {
-    fetchDashboard();
+if (tabButtons.length) {
+  tabButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const target = button.dataset.tabTarget;
+      if (target) {
+        activateTab(target);
+      }
+    });
   });
 }
 
-if (dashboardQueue) {
-  dashboardQueue.addEventListener("click", async (event) => {
+if (systemRefreshButton) {
+  systemRefreshButton.addEventListener("click", () => {
+    fetchSystemOverview();
+  });
+}
+
+if (systemQueue) {
+  systemQueue.addEventListener("click", async (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) {
       return;
@@ -286,26 +623,237 @@ if (dashboardQueue) {
     }
 
     try {
+      let url = "";
+      let method = "POST";
       if (action === "delete") {
-        const response = await fetch(`/admin/queue/${entryId}`, { method: "DELETE" });
-        if (!response.ok) {
-          throw new Error("Entfernen fehlgeschlagen");
-        }
+        url = `/admin/queue/${entryId}`;
+        method = "DELETE";
       } else if (action === "promote") {
-        const response = await fetch(`/admin/queue/${entryId}/promote`, { method: "POST" });
-        if (!response.ok) {
-          throw new Error("Priorisieren fehlgeschlagen");
-        }
+        url = `/admin/queue/${entryId}/promote`;
       } else if (action === "play") {
-        const response = await fetch(`/admin/queue/${entryId}/play`, { method: "POST" });
-        if (!response.ok) {
-          throw new Error("Übergabe fehlgeschlagen");
-        }
+        url = `/admin/queue/${entryId}/play`;
+      }
+      if (!url) {
+        return;
+      }
+      const response = await apiFetch(url, { method });
+      if (!response.ok) {
+        throw new Error("Aktion fehlgeschlagen");
       }
       showToast("Aktion ausgeführt", "success");
-      fetchDashboard();
+      fetchSystemOverview();
     } catch (error) {
       showToast(error.message || "Unbekannter Fehler", "error");
     }
   });
+}
+
+if (systemTogglesForm) {
+  systemTogglesForm.addEventListener("change", async (event) => {
+    if (togglesUpdating) {
+      return;
+    }
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement) || !target.name) {
+      return;
+    }
+    const payload = { [target.name]: target.checked };
+    try {
+      const response = await apiFetch("/admin/system/toggles", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || "Schalter konnte nicht gespeichert werden");
+      }
+      const data = await response.json();
+      updateToggleInputs(data);
+      showToast("Schalter aktualisiert", "success");
+    } catch (error) {
+      showToast(error.message || "Unbekannter Fehler", "error");
+      fetchSystemOverview();
+    }
+  });
+}
+
+if (audioScanButton) {
+  audioScanButton.addEventListener("click", () => {
+    fetchAudioOutput(true);
+  });
+}
+
+if (audioForm && audioDeviceSelect) {
+  audioForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const deviceId = audioDeviceSelect.value;
+    try {
+      const response = await apiFetch("/admin/audio/output", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ device_id: deviceId }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || "Ausgabegerät konnte nicht gesetzt werden");
+      }
+      const data = await response.json();
+      populateSelect(audioDeviceSelect, data.devices, "identifier", "label", data.active_device_id);
+      showToast("Audio-Gerät aktualisiert", "success");
+    } catch (error) {
+      showToast(error.message || "Unbekannter Fehler", "error");
+    }
+  });
+}
+
+if (mixerForm) {
+  mixerForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const payload = {
+      crossfade_seconds: parseFloat(mixerCrossfade?.value || "0") || 0,
+      volume_curve: mixerVolumeCurve?.value,
+      bass_crossover_hz: parseInt(mixerBassHz?.value || "0", 10) || 0,
+      bass_curve: mixerBassCurve?.value,
+      filter_hp_to_lp: Boolean(mixerFilterHp?.checked),
+      filter_lp_to_hp: Boolean(mixerFilterLp?.checked),
+      time_stretch_mode: mixerTimeStretch?.value,
+    };
+    try {
+      const response = await apiFetch("/admin/audio/mixer", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || "Mixer konnte nicht gespeichert werden");
+      }
+      await response.json();
+      showToast("Mixer-Einstellungen gespeichert", "success");
+    } catch (error) {
+      showToast(error.message || "Unbekannter Fehler", "error");
+    }
+  });
+}
+
+if (libraryForm) {
+  libraryForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const formData = new FormData(libraryForm);
+    const payload = Object.fromEntries(formData.entries());
+    try {
+      const response = await apiFetch("/admin/library/settings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || "Bibliothek konnte nicht gespeichert werden");
+      }
+      const data = await response.json();
+      if (libraryTrackCount) libraryTrackCount.textContent = data.track_count;
+      if (libraryQuarantine) libraryQuarantine.textContent = data.quarantine_path;
+      showToast("Bibliothek aktualisiert", "success");
+    } catch (error) {
+      showToast(error.message || "Unbekannter Fehler", "error");
+    }
+  });
+}
+
+if (lightForm) {
+  lightForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const payload = {
+      target_host: lightHost?.value,
+      target_port: lightPort?.value ? Number(lightPort.value) : undefined,
+      superscenes_enabled: Boolean(lightSuperscenesToggle?.checked),
+      fog_enabled: Boolean(lightFogToggle?.checked),
+    };
+    try {
+      const response = await apiFetch("/admin/light/settings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || "OSC-Konfiguration konnte nicht gespeichert werden");
+      }
+      const data = await response.json();
+      if (lightHost) lightHost.value = data.target_host;
+      if (lightPort) lightPort.value = data.target_port;
+      updateToggleInputs({
+        fog_enabled: data.fog_enabled,
+        superscenes_enabled: data.superscenes_enabled,
+        public_enabled: togglePublic ? togglePublic.checked : false,
+      });
+      showToast("OSC-Einstellungen gespeichert", "success");
+    } catch (error) {
+      showToast(error.message || "Unbekannter Fehler", "error");
+    }
+  });
+}
+
+if (lightResyncButton) {
+  lightResyncButton.addEventListener("click", async () => {
+    try {
+      const response = await apiFetch("/admin/light/resync", { method: "POST" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || "Re-Sync fehlgeschlagen");
+      }
+      showToast("Bar-Reset gesendet", "success");
+      fetchSystemOverview();
+    } catch (error) {
+      showToast(error.message || "Unbekannter Fehler", "error");
+    }
+  });
+}
+
+if (analysisForm) {
+  analysisForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const payload = {
+      key_weight: parseFloat(analysisKey?.value || "0") || 0,
+      bpm_weight: parseFloat(analysisBpm?.value || "0") || 0,
+      energy_weight: parseFloat(analysisEnergy?.value || "0") || 0,
+      genre_weight: parseFloat(analysisGenre?.value || "0") || 0,
+      recency_weight: parseFloat(analysisRecency?.value || "0") || 0,
+      request_weight: parseFloat(analysisRequest?.value || "0") || 0,
+      soft_spacing: parseInt(analysisSpacing?.value || "0", 10) || 0,
+    };
+    try {
+      const response = await apiFetch("/admin/analysis/settings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || "Analyse konnte nicht gespeichert werden");
+      }
+      await response.json();
+      showToast("Analyse-Parameter gespeichert", "success");
+    } catch (error) {
+      showToast(error.message || "Unbekannter Fehler", "error");
+    }
+  });
+}
+
+if (controlCard && !controlCard.hasAttribute("hidden")) {
+  setAuthenticated(true);
 }

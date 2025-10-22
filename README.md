@@ -53,6 +53,22 @@ Persistenz-Logs lassen sich jederzeit über `AUTO_DJ_RUNTIME_LOG_ROOT` sowie
 `AUTO_DJ_PERSISTENT_LOG_ROOT` auf eigene, beschreibbare Verzeichnisse umbiegen.
 
 Der initiale Admin-Login lautet `admin` / `Admin123` und kann nach der Anmeldung im
-Admin-Frontend (`/admin`) geändert werden. Nach erfolgreichem Login blendet das Dashboard die
-Live-Steuerung mit Now-Playing-Ansicht, Queue-Verwaltung (Priorisieren, Entfernen, als Nächstes
-spielen) sowie die Passwortpflege ein.
+Admin-Frontend (`/admin`) geändert werden. Nach erfolgreichem Login steht ein moduliertes
+Kontrollzentrum mit folgenden Bereichen bereit:
+
+* **Systemübersicht** – Now-/Next-Ansicht, Queue-Verwaltung, Echtzeit-Metriken (CPU, RAM,
+  Temperatur, XRUNs, OSC-Status, Netzmodus) sowie Schalter für „Nebelmaschine aktiv“,
+  „Superscenes erlaubt“ und „Öffentlich erreichbar“.
+* **Audio & Mixer** – Scan und Auswahl der verfügbaren ALSA/Pulse-Ausgabegeräte inklusive
+  Neustart-Hinweis sowie Konfiguration von Crossfade, Lautstärke- und Bass-Kurven,
+  Filter-Übergängen und Time-Stretch-Modi.
+* **Musikbibliothek** – Überblick über analysierte Tracks, Quarantänepfad und anpassbare Pfad-
+  bzw. Datenbank-Einstellungen.
+* **Licht & Daslight 5** – Verwaltung der OSC-Zielparameter, Superscene- und Nebel-Toggles
+  sowie ein Bar-Reset-Trigger für die Daslight-Synchronisation.
+* **Analyse & KI** – Feinjustierung der DJ-Brain-Gewichtungen (Key/BPM/Energie/Genre/Recency/
+  Requests) inklusive Soft-Spacing-Konfiguration.
+* **Protokolle & Diagnose** – Pfade für Runtime-/Persistenz-Logs, Cache und Konfiguration,
+  letzte Fehlermeldung sowie Passwortpflege für alle Admin-Accounts.
+
+Die Gäste-Oberfläche verweist über ein dezentes ⚙️-Icon im Footer direkt auf die Admin-Anmeldung.

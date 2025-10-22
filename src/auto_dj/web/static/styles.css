@@ -7,6 +7,7 @@
   --card-border: rgba(255, 255, 255, 0.06);
   --text-primary: #f8fbff;
   --text-secondary: rgba(248, 251, 255, 0.72);
+  --text-muted: rgba(248, 251, 255, 0.55);
   --accent: #7c5dfa;
   --accent-strong: #ff6584;
   --success: #52eca4;
@@ -383,6 +384,28 @@ body {
   pointer-events: none;
 }
 
+.admin-entry {
+  position: fixed;
+  bottom: 2rem;
+  left: 2rem;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  text-decoration: none;
+  background: linear-gradient(135deg, rgba(124, 93, 250, 0.9), rgba(95, 46, 234, 0.9));
+  color: white;
+  font-size: 1.4rem;
+  box-shadow: 0 18px 40px rgba(95, 46, 234, 0.45);
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+
+.admin-entry:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 24px 50px rgba(95, 46, 234, 0.55);
+}
+
 @media (max-width: 768px) {
   body {
     padding: 1rem;
@@ -460,6 +483,164 @@ body {
   display: grid;
   gap: 1.5rem;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.admin-tabs {
+  display: grid;
+  grid-auto-flow: column;
+  gap: 0.75rem;
+  justify-content: flex-start;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+}
+
+.tab-button {
+  padding: 0.55rem 1.2rem;
+  border-radius: 999px;
+  border: 1px solid rgba(124, 93, 250, 0.3);
+  background: transparent;
+  color: var(--text-secondary);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border var(--transition);
+}
+
+.tab-button:hover,
+.tab-button:focus {
+  border-color: rgba(124, 93, 250, 0.6);
+  color: var(--text-primary);
+}
+
+.tab-button.is-active {
+  background: linear-gradient(120deg, rgba(124, 93, 250, 0.65), rgba(95, 46, 234, 0.8));
+  color: white;
+  border-color: transparent;
+}
+
+.tab-panels {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.tab-panel[hidden] {
+  display: none;
+}
+
+.tab-panel.is-active {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.panel-grid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.panel-card {
+  background: rgba(14, 17, 27, 0.9);
+  border: 1px solid rgba(100, 114, 255, 0.2);
+  border-radius: 20px;
+  padding: 1.5rem;
+  display: grid;
+  gap: 1.25rem;
+}
+
+.panel-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.system-stats {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+}
+
+.system-stats div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.95rem;
+}
+
+.system-stats dt {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.system-stats dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.toggle-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+}
+
+.toggle input {
+  width: 48px;
+  height: 24px;
+  border-radius: 999px;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.12);
+  position: relative;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.toggle input::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: white;
+  transition: transform var(--transition);
+}
+
+.toggle input:checked {
+  background: linear-gradient(120deg, rgba(124, 93, 250, 0.9), rgba(95, 46, 234, 0.8));
+}
+
+.toggle input:checked::after {
+  transform: translateX(24px);
+}
+
+.grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.grid__full {
+  grid-column: 1 / -1;
+}
+
+.dashboard-next {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  display: grid;
+  gap: 0.4rem;
+}
+
+.dashboard-next strong {
+  color: var(--text-primary);
 }
 
 .dashboard-panel {

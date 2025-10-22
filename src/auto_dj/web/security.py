@@ -9,7 +9,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from ..config import AutoDjConfig
 
 _SESSION_COOKIE = "auto_dj_admin_session"
-_SESSION_MAX_AGE = int(timedelta(hours=12).total_seconds())
+_SESSION_MAX_AGE = int(timedelta(minutes=15).total_seconds())
 
 
 class SessionManager:

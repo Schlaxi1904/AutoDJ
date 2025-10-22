@@ -3,20 +3,24 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, ConfigDict
-from sqlalchemy import or_, select
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import func, or_, select
 
 from ..config import AutoDjConfig, load_config
 from ..database.models import AdminUser, QueueEntry, Track
 from ..database.session import Database
 from ..services.admin import AdminService
+from ..services.audio_devices import AudioDeviceScanner
 from ..services.queue import QueueManager
+from ..services.osc import OscService
+from ..services.settings import SettingsService
+from ..services.system import SystemMonitor
 from .security import SessionManager
 
 app = FastAPI(title="Auto-DJ")
@@ -25,6 +29,13 @@ _PACKAGE_DIR = Path(__file__).resolve().parent
 _TEMPLATES = Jinja2Templates(directory=str(_PACKAGE_DIR / "templates"))
 _STATIC_DIR = _PACKAGE_DIR / "static"
 _CONFIG = load_config()
+
+_SYSTEM_TOGGLE_KEY = "system.toggles"
+_AUDIO_OUTPUT_KEY = "audio.output_device"
+_AUDIO_MIXER_KEY = "audio.mixer"
+_LIBRARY_SETTINGS_KEY = "library.settings"
+_LIGHT_SETTINGS_KEY = "light.settings"
+_ANALYSIS_SETTINGS_KEY = "analysis.settings"
 
 if _STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
@@ -50,6 +61,115 @@ def get_admin_service(
 
 def get_session_manager(config: AutoDjConfig = Depends(get_config)) -> SessionManager:
     return SessionManager(config)
+
+
+def get_settings_service(db: Database = Depends(get_database)) -> SettingsService:
+    return SettingsService(db)
+
+
+def get_system_monitor(
+    config: AutoDjConfig = Depends(get_config),
+    settings: SettingsService = Depends(get_settings_service),
+) -> SystemMonitor:
+    return SystemMonitor(config, settings)
+
+
+def get_audio_device_scanner() -> AudioDeviceScanner:
+    return AudioDeviceScanner()
+
+
+def get_osc_service(config: AutoDjConfig = Depends(get_config)) -> OscService:
+    return OscService(config.osc)
+
+
+def _merge_system_toggles(settings: SettingsService, config: AutoDjConfig) -> SystemToggleState:
+    default = {
+        "fog_enabled": False,
+        "superscenes_enabled": False,
+        "public_enabled": config.web_security.public_enabled,
+    }
+    stored = settings.get_dict(_SYSTEM_TOGGLE_KEY, default)
+    merged: Dict[str, bool] = {**default, **stored}
+    return SystemToggleState(
+        fog_enabled=bool(merged.get("fog_enabled", False)),
+        superscenes_enabled=bool(merged.get("superscenes_enabled", False)),
+        public_enabled=bool(merged.get("public_enabled", default["public_enabled"])),
+    )
+
+
+def _load_mixer_settings(settings: SettingsService) -> MixerSettingsOut:
+    defaults = {
+        "crossfade_seconds": 8.0,
+        "volume_curve": "s-curve",
+        "bass_crossover_hz": 120,
+        "bass_curve": "lr24",
+        "filter_hp_to_lp": True,
+        "filter_lp_to_hp": True,
+        "time_stretch_mode": "auto",
+    }
+    stored = settings.get_dict(_AUDIO_MIXER_KEY, defaults)
+    merged = {**defaults, **stored}
+    return MixerSettingsOut(**merged)
+
+
+def _load_light_settings(
+    settings: SettingsService, config: AutoDjConfig, toggles: SystemToggleState
+) -> LightSettingsOut:
+    defaults = {
+        "target_host": config.osc.target_host,
+        "target_port": config.osc.target_port,
+    }
+    stored = settings.get_dict(_LIGHT_SETTINGS_KEY, defaults)
+    merged = {**defaults, **stored}
+    return LightSettingsOut(
+        target_host=str(merged.get("target_host", defaults["target_host"])),
+        target_port=int(merged.get("target_port", defaults["target_port"])),
+        superscenes_enabled=toggles.superscenes_enabled,
+        fog_enabled=toggles.fog_enabled,
+    )
+
+
+def _load_analysis_settings(settings: SettingsService, config: AutoDjConfig) -> AnalysisSettingsOut:
+    defaults = {
+        "key_weight": config.brain_weights.key,
+        "bpm_weight": config.brain_weights.bpm,
+        "energy_weight": config.brain_weights.energy,
+        "genre_weight": config.brain_weights.genre,
+        "recency_weight": config.brain_weights.recency,
+        "request_weight": config.brain_weights.request,
+        "soft_spacing": config.queue_policy.preferred_spacing,
+    }
+    stored = settings.get_dict(_ANALYSIS_SETTINGS_KEY, defaults)
+    merged = {**defaults, **stored}
+    return AnalysisSettingsOut(**merged)
+
+
+def _network_mode_label(config: AutoDjConfig, toggles: SystemToggleState) -> str:
+    if config.web_security.ssl_enabled:
+        return "Öffentlich (SSL)"
+    if toggles.public_enabled:
+        return "Öffentlich (HTTP)"
+    return "Lokal (HTTP)"
+
+
+def _library_state(
+    db: Database, settings: SettingsService, config: AutoDjConfig
+) -> LibraryStateOut:
+    defaults = {
+        "music_path": str(config.paths.music_root),
+        "database_dsn": config.database.dsn,
+    }
+    stored = settings.get_dict(_LIBRARY_SETTINGS_KEY, defaults)
+    merged = {**defaults, **stored}
+    with db.session() as session:
+        track_count = session.execute(select(func.count(Track.id))).scalar_one()
+    quarantine = config.paths.music_root / "_quarantine"
+    return LibraryStateOut(
+        music_path=str(merged.get("music_path", defaults["music_path"])),
+        database_dsn=str(merged.get("database_dsn", defaults["database_dsn"])),
+        track_count=int(track_count or 0),
+        quarantine_path=str(quarantine),
+    )
 
 
 def require_admin(
@@ -133,6 +253,121 @@ class AdminDashboardStateOut(BaseModel):
     now_playing: Optional[QueueEntryOut]
     queue: List[QueueEntryOut]
     remaining_slots: int
+
+
+class SystemToggleState(BaseModel):
+    fog_enabled: bool = False
+    superscenes_enabled: bool = False
+    public_enabled: bool = False
+
+
+class SystemOverviewOut(BaseModel):
+    now_playing: Optional[QueueEntryOut]
+    next_entry: Optional[QueueEntryOut]
+    queue_length: int
+    remaining_slots: int
+    cpu_percent: Optional[float]
+    memory_percent: Optional[float]
+    temperature_c: Optional[float]
+    xrun_count: int
+    osc_connected: bool
+    network_mode: str
+    toggles: SystemToggleState
+
+
+class SystemToggleUpdate(BaseModel):
+    fog_enabled: Optional[bool] = None
+    superscenes_enabled: Optional[bool] = None
+    public_enabled: Optional[bool] = None
+
+
+class AudioDeviceOut(BaseModel):
+    identifier: str
+    label: str
+    kind: str
+
+
+class AudioOutputStateOut(BaseModel):
+    active_device_id: Optional[str]
+    devices: List[AudioDeviceOut]
+
+
+class AudioOutputUpdate(BaseModel):
+    device_id: str
+
+
+class MixerSettingsOut(BaseModel):
+    crossfade_seconds: float = Field(ge=0)
+    volume_curve: str
+    bass_crossover_hz: int
+    bass_curve: str
+    filter_hp_to_lp: bool
+    filter_lp_to_hp: bool
+    time_stretch_mode: str
+
+
+class MixerSettingsUpdate(BaseModel):
+    crossfade_seconds: Optional[float] = Field(default=None, ge=0)
+    volume_curve: Optional[str] = None
+    bass_crossover_hz: Optional[int] = None
+    bass_curve: Optional[str] = None
+    filter_hp_to_lp: Optional[bool] = None
+    filter_lp_to_hp: Optional[bool] = None
+    time_stretch_mode: Optional[str] = None
+
+
+class LibraryStateOut(BaseModel):
+    music_path: str
+    database_dsn: str
+    track_count: int
+    quarantine_path: str
+
+
+class LibraryUpdateRequest(BaseModel):
+    music_path: Optional[str] = None
+    database_dsn: Optional[str] = None
+
+
+class LightSettingsOut(BaseModel):
+    target_host: str
+    target_port: int
+    superscenes_enabled: bool
+    fog_enabled: bool
+
+
+class LightSettingsUpdate(BaseModel):
+    target_host: Optional[str] = None
+    target_port: Optional[int] = Field(default=None, ge=1, le=65535)
+    superscenes_enabled: Optional[bool] = None
+    fog_enabled: Optional[bool] = None
+
+
+class AnalysisSettingsOut(BaseModel):
+    key_weight: float
+    bpm_weight: float
+    energy_weight: float
+    genre_weight: float
+    recency_weight: float
+    request_weight: float
+    soft_spacing: int
+
+
+class AnalysisSettingsUpdate(BaseModel):
+    key_weight: Optional[float] = None
+    bpm_weight: Optional[float] = None
+    energy_weight: Optional[float] = None
+    genre_weight: Optional[float] = None
+    recency_weight: Optional[float] = None
+    request_weight: Optional[float] = None
+    soft_spacing: Optional[int] = Field(default=None, ge=0)
+
+
+class DiagnosticsOut(BaseModel):
+    runtime_log_path: str
+    persistent_log_path: str
+    cache_path: str
+    config_path: str
+    last_error: Optional[str]
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -289,6 +524,220 @@ async def admin_state(
         now_playing=now_playing,
         queue=status_snapshot.entries,
         remaining_slots=status_snapshot.remaining_slots,
+    )
+
+
+@app.get("/admin/system/overview", response_model=SystemOverviewOut)
+async def admin_system_overview(
+    queue: QueueManager = Depends(get_queue_manager),
+    monitor: SystemMonitor = Depends(get_system_monitor),
+    settings: SettingsService = Depends(get_settings_service),
+    config: AutoDjConfig = Depends(get_config),
+    _: AdminUser = Depends(require_admin),
+) -> SystemOverviewOut:
+    toggles = _merge_system_toggles(settings, config)
+    status_snapshot = queue.status()
+    now_playing = queue.current_track()
+    next_entry = next(
+        (entry for entry in status_snapshot.entries if entry.status == "pending"),
+        None,
+    )
+    queue_length = len(status_snapshot.entries)
+    host_snapshot = monitor.snapshot()
+
+    return SystemOverviewOut(
+        now_playing=now_playing,
+        next_entry=next_entry,
+        queue_length=queue_length,
+        remaining_slots=status_snapshot.remaining_slots,
+        cpu_percent=host_snapshot.cpu_percent,
+        memory_percent=host_snapshot.memory_percent,
+        temperature_c=host_snapshot.temperature_c,
+        xrun_count=host_snapshot.xrun_count,
+        osc_connected=host_snapshot.osc_connected,
+        network_mode=_network_mode_label(config, toggles),
+        toggles=toggles,
+    )
+
+
+@app.post("/admin/system/toggles", response_model=SystemToggleState)
+async def admin_update_system_toggles(
+    payload: SystemToggleUpdate,
+    settings: SettingsService = Depends(get_settings_service),
+    config: AutoDjConfig = Depends(get_config),
+    _: AdminUser = Depends(require_admin),
+) -> SystemToggleState:
+    updates = {
+        key: value
+        for key, value in payload.model_dump(exclude_none=True).items()
+        if isinstance(value, bool)
+    }
+    if updates:
+        settings.update_dict(_SYSTEM_TOGGLE_KEY, updates)
+    return _merge_system_toggles(settings, config)
+
+
+@app.get("/admin/audio/output", response_model=AudioOutputStateOut)
+async def admin_audio_output_state(
+    scanner: AudioDeviceScanner = Depends(get_audio_device_scanner),
+    settings: SettingsService = Depends(get_settings_service),
+    _: AdminUser = Depends(require_admin),
+) -> AudioOutputStateOut:
+    devices = [AudioDeviceOut(**device.__dict__) for device in scanner.scan()]
+    stored = settings.get_dict(_AUDIO_OUTPUT_KEY, {})
+    active_device_id = stored.get("device_id") if isinstance(stored, dict) else None
+    if active_device_id is None and devices:
+        active_device_id = devices[0].identifier
+    return AudioOutputStateOut(active_device_id=active_device_id, devices=devices)
+
+
+@app.post("/admin/audio/output", response_model=AudioOutputStateOut)
+async def admin_update_audio_output(
+    payload: AudioOutputUpdate,
+    scanner: AudioDeviceScanner = Depends(get_audio_device_scanner),
+    settings: SettingsService = Depends(get_settings_service),
+    _: AdminUser = Depends(require_admin),
+) -> AudioOutputStateOut:
+    available = {device.identifier for device in scanner.scan()}
+    if payload.device_id not in available and available:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unbekanntes Gerät")
+    settings.set(_AUDIO_OUTPUT_KEY, {"device_id": payload.device_id})
+    devices = [AudioDeviceOut(**device.__dict__) for device in scanner.scan()]
+    return AudioOutputStateOut(active_device_id=payload.device_id, devices=devices)
+
+
+@app.get("/admin/audio/mixer", response_model=MixerSettingsOut)
+async def admin_mixer_settings(
+    settings: SettingsService = Depends(get_settings_service),
+    _: AdminUser = Depends(require_admin),
+) -> MixerSettingsOut:
+    return _load_mixer_settings(settings)
+
+
+@app.post("/admin/audio/mixer", response_model=MixerSettingsOut)
+async def admin_update_mixer_settings(
+    payload: MixerSettingsUpdate,
+    settings: SettingsService = Depends(get_settings_service),
+    _: AdminUser = Depends(require_admin),
+) -> MixerSettingsOut:
+    updates = payload.model_dump(exclude_none=True)
+    if updates:
+        settings.update_dict(_AUDIO_MIXER_KEY, updates)
+    return _load_mixer_settings(settings)
+
+
+@app.get("/admin/library/settings", response_model=LibraryStateOut)
+async def admin_library_settings(
+    db: Database = Depends(get_database),
+    settings: SettingsService = Depends(get_settings_service),
+    config: AutoDjConfig = Depends(get_config),
+    _: AdminUser = Depends(require_admin),
+) -> LibraryStateOut:
+    return _library_state(db, settings, config)
+
+
+@app.post("/admin/library/settings", response_model=LibraryStateOut)
+async def admin_update_library_settings(
+    payload: LibraryUpdateRequest,
+    db: Database = Depends(get_database),
+    settings: SettingsService = Depends(get_settings_service),
+    config: AutoDjConfig = Depends(get_config),
+    _: AdminUser = Depends(require_admin),
+) -> LibraryStateOut:
+    updates = payload.model_dump(exclude_none=True)
+    if updates:
+        settings.update_dict(_LIBRARY_SETTINGS_KEY, updates)
+    return _library_state(db, settings, config)
+
+
+@app.get("/admin/light/settings", response_model=LightSettingsOut)
+async def admin_light_settings(
+    settings: SettingsService = Depends(get_settings_service),
+    config: AutoDjConfig = Depends(get_config),
+    _: AdminUser = Depends(require_admin),
+) -> LightSettingsOut:
+    toggles = _merge_system_toggles(settings, config)
+    return _load_light_settings(settings, config, toggles)
+
+
+@app.post("/admin/light/settings", response_model=LightSettingsOut)
+async def admin_update_light_settings(
+    payload: LightSettingsUpdate,
+    settings: SettingsService = Depends(get_settings_service),
+    config: AutoDjConfig = Depends(get_config),
+    _: AdminUser = Depends(require_admin),
+) -> LightSettingsOut:
+    updates = payload.model_dump(exclude_none=True)
+    if updates:
+        toggle_updates = {
+            key: updates.pop(key)
+            for key in list(updates.keys())
+            if key in {"superscenes_enabled", "fog_enabled"}
+        }
+        if updates:
+            settings.update_dict(_LIGHT_SETTINGS_KEY, updates)
+        if toggle_updates:
+            settings.update_dict(_SYSTEM_TOGGLE_KEY, toggle_updates)
+    toggles = _merge_system_toggles(settings, config)
+    return _load_light_settings(settings, config, toggles)
+
+
+@app.post("/admin/light/resync", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_light_resync(
+    osc: OscService = Depends(get_osc_service),
+    settings: SettingsService = Depends(get_settings_service),
+    config: AutoDjConfig = Depends(get_config),
+    _: AdminUser = Depends(require_admin),
+) -> Response:
+    try:
+        osc.reset_bar()
+    except Exception as exc:  # pragma: no cover - network failure branch
+        settings.update_dict(SystemMonitor.OSC_STATUS_KEY, {"connected": False})
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="OSC-ReSync fehlgeschlagen",
+        ) from exc
+    settings.update_dict(SystemMonitor.OSC_STATUS_KEY, {"connected": True})
+    # Refresh merged toggles to ensure they stay in sync with the stored state.
+    _merge_system_toggles(settings, config)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.get("/admin/analysis/settings", response_model=AnalysisSettingsOut)
+async def admin_analysis_settings(
+    settings: SettingsService = Depends(get_settings_service),
+    config: AutoDjConfig = Depends(get_config),
+    _: AdminUser = Depends(require_admin),
+) -> AnalysisSettingsOut:
+    return _load_analysis_settings(settings, config)
+
+
+@app.post("/admin/analysis/settings", response_model=AnalysisSettingsOut)
+async def admin_update_analysis_settings(
+    payload: AnalysisSettingsUpdate,
+    settings: SettingsService = Depends(get_settings_service),
+    config: AutoDjConfig = Depends(get_config),
+    _: AdminUser = Depends(require_admin),
+) -> AnalysisSettingsOut:
+    updates = payload.model_dump(exclude_none=True)
+    if updates:
+        settings.update_dict(_ANALYSIS_SETTINGS_KEY, updates)
+    return _load_analysis_settings(settings, config)
+
+
+@app.get("/admin/logs/diagnostics", response_model=DiagnosticsOut)
+async def admin_diagnostics(
+    settings: SettingsService = Depends(get_settings_service),
+    config: AutoDjConfig = Depends(get_config),
+    _: AdminUser = Depends(require_admin),
+) -> DiagnosticsOut:
+    last_error = settings.get("system.last_error")
+    return DiagnosticsOut(
+        runtime_log_path=str(config.paths.runtime_log_root),
+        persistent_log_path=str(config.paths.persistent_log_root),
+        cache_path=str(config.paths.cache_root),
+        config_path=str(config.paths.config_root),
+        last_error=last_error if isinstance(last_error, str) else None,
     )
 
 

@@ -45,41 +45,272 @@
         <p class="admin-hint">Standard-Login: <code>admin / Admin123</code> &ndash; bitte direkt ändern.</p>
       </section>
 
-      <section class="admin-card" id="dashboard-card" {% if not admin %}hidden{% endif %}>
-        <h2>Live-Dashboard</h2>
+      <section class="admin-card" id="control-card" {% if not admin %}hidden{% endif %}>
+        <h2>Kontrollzentrum</h2>
         <p class="admin-card__lead">
-          Verwalte laufende Songs, die Queue und wichtige Systemaktionen. Alle Steuerungen sind
-          barrierearm gestaltet und für Touch optimiert.
+          Sämtliche Module sind maximal zwei Klicks entfernt. Nutze die Tabs, um schnell zwischen
+          Systemstatus, Mixer, Bibliothek, Licht und Analyse zu wechseln.
         </p>
-        <div class="admin-dashboard-grid">
-          <section class="dashboard-panel" aria-labelledby="dashboard-now-playing-title">
-            <header class="dashboard-panel__header">
-              <h3 id="dashboard-now-playing-title">Now / Next</h3>
-              <button class="button button--ghost" id="refresh-dashboard" type="button">
-                Aktualisieren
-              </button>
-            </header>
-            <div class="dashboard-now" id="dashboard-now-playing" aria-live="polite">
-              <p class="admin-empty">Keine Wiedergabe aktiv.</p>
+        <nav class="admin-tabs" role="tablist">
+          <button class="tab-button is-active" data-tab-target="system" role="tab" aria-selected="true">
+            Systemübersicht
+          </button>
+          <button class="tab-button" data-tab-target="audio" role="tab" aria-selected="false">
+            Audio &amp; Mixer
+          </button>
+          <button class="tab-button" data-tab-target="library" role="tab" aria-selected="false">
+            Musikbibliothek
+          </button>
+          <button class="tab-button" data-tab-target="light" role="tab" aria-selected="false">
+            Licht &amp; Daslight 5
+          </button>
+          <button class="tab-button" data-tab-target="analysis" role="tab" aria-selected="false">
+            Analyse &amp; KI
+          </button>
+          <button class="tab-button" data-tab-target="diagnostics" role="tab" aria-selected="false">
+            Protokolle &amp; Diagnose
+          </button>
+        </nav>
+
+        <div class="tab-panels">
+          <section class="tab-panel is-active" data-tab="system" role="tabpanel">
+            <div class="panel-grid">
+              <article class="panel-card" aria-labelledby="system-now-title">
+                <header class="panel-card__header">
+                  <h3 id="system-now-title">Now / Next</h3>
+                  <button class="button button--ghost" id="system-refresh" type="button">
+                    Aktualisieren
+                  </button>
+                </header>
+                <div class="dashboard-now" id="system-now-playing" aria-live="polite">
+                  <p class="admin-empty">Keine Wiedergabe aktiv.</p>
+                </div>
+                <div class="dashboard-next" id="system-next-track" aria-live="polite"></div>
+              </article>
+
+              <article class="panel-card" aria-labelledby="system-status-title">
+                <header class="panel-card__header">
+                  <h3 id="system-status-title">Systemstatus</h3>
+                </header>
+                <dl class="system-stats">
+                  <div><dt>CPU</dt><dd id="system-cpu">-- %</dd></div>
+                  <div><dt>RAM</dt><dd id="system-ram">-- %</dd></div>
+                  <div><dt>Temperatur</dt><dd id="system-temp">-- °C</dd></div>
+                  <div><dt>XRUNs</dt><dd id="system-xruns">--</dd></div>
+                  <div><dt>OSC</dt><dd id="system-osc">Unbekannt</dd></div>
+                  <div><dt>Netzmodus</dt><dd id="system-network">--</dd></div>
+                </dl>
+                <form class="toggle-form" id="system-toggles-form">
+                  <label class="toggle">
+                    <input type="checkbox" id="toggle-fog" name="fog_enabled" />
+                    <span>Nebelmaschine aktiv</span>
+                  </label>
+                  <label class="toggle">
+                    <input type="checkbox" id="toggle-superscenes" name="superscenes_enabled" />
+                    <span>Superscenes erlaubt</span>
+                  </label>
+                  <label class="toggle">
+                    <input type="checkbox" id="toggle-public" name="public_enabled" />
+                    <span>Öffentlich erreichbar</span>
+                  </label>
+                </form>
+              </article>
             </div>
+
+            <section class="dashboard-panel" aria-labelledby="system-queue-title">
+              <header class="dashboard-panel__header">
+                <h3 id="system-queue-title">Queue-Verwaltung</h3>
+                <span class="dashboard-meta">Freie Slots: <strong id="system-remaining">--</strong></span>
+              </header>
+              <ul class="dashboard-queue" id="system-queue" role="list" aria-live="polite"></ul>
+            </section>
           </section>
 
-          <section class="dashboard-panel" aria-labelledby="dashboard-queue-title">
-            <header class="dashboard-panel__header">
-              <h3 id="dashboard-queue-title">Queue-Verwaltung</h3>
-              <span class="dashboard-meta">Freie Slots: <strong id="dashboard-remaining">--</strong></span>
-            </header>
-            <ul class="dashboard-queue" id="dashboard-queue" role="list" aria-live="polite"></ul>
+          <section class="tab-panel" data-tab="audio" role="tabpanel" hidden>
+            <article class="panel-card" aria-labelledby="audio-device-title">
+              <header class="panel-card__header">
+                <h3 id="audio-device-title">Ausgabegerät</h3>
+                <button class="button button--ghost" id="audio-scan" type="button">
+                  Ausgabegeräte scannen
+                </button>
+              </header>
+              <form class="admin-form" id="audio-output-form">
+                <label class="input" for="audio-device-select">
+                  <span class="input__label">Aktives Gerät</span>
+                  <select id="audio-device-select" name="device_id"></select>
+                </label>
+                <button class="button" type="submit">Speichern &amp; Audio-Engine neu starten</button>
+              </form>
+            </article>
+
+            <article class="panel-card" aria-labelledby="mixer-settings-title">
+              <header class="panel-card__header">
+                <h3 id="mixer-settings-title">Mixer-Einstellungen</h3>
+              </header>
+              <form class="admin-form grid" id="mixer-form">
+                <label class="input">
+                  <span class="input__label">Crossfade-Dauer (Sek.)</span>
+                  <input type="number" id="mixer-crossfade" name="crossfade_seconds" min="0" step="0.5" />
+                </label>
+                <label class="input">
+                  <span class="input__label">Volume-Kurve</span>
+                  <select id="mixer-volume-curve" name="volume_curve">
+                    <option value="linear">Linear</option>
+                    <option value="s-curve">S-Kurve</option>
+                    <option value="exponential">Exponentiell</option>
+                  </select>
+                </label>
+                <label class="input">
+                  <span class="input__label">Bass Crossfade (Hz)</span>
+                  <input type="number" id="mixer-bass-hz" name="bass_crossover_hz" min="20" max="250" step="1" />
+                </label>
+                <label class="input">
+                  <span class="input__label">Bass-Kurve</span>
+                  <select id="mixer-bass-curve" name="bass_curve">
+                    <option value="lr24">Linkwitz-Riley 24 dB</option>
+                    <option value="butterworth12">Butterworth 12 dB</option>
+                  </select>
+                </label>
+                <label class="toggle">
+                  <input type="checkbox" id="mixer-filter-hp" name="filter_hp_to_lp" />
+                  <span>High → Low Filter aktiv</span>
+                </label>
+                <label class="toggle">
+                  <input type="checkbox" id="mixer-filter-lp" name="filter_lp_to_hp" />
+                  <span>Low → High Filter aktiv</span>
+                </label>
+                <label class="input">
+                  <span class="input__label">Time-Stretch Modus</span>
+                  <select id="mixer-time-stretch" name="time_stretch_mode">
+                    <option value="auto">Auto</option>
+                    <option value="incoming">Nur auf Incoming</option>
+                    <option value="off">Deaktiviert</option>
+                  </select>
+                </label>
+                <div class="grid__full">
+                  <button class="button" type="submit">Mixer speichern</button>
+                </div>
+              </form>
+            </article>
+          </section>
+
+          <section class="tab-panel" data-tab="library" role="tabpanel" hidden>
+            <article class="panel-card" aria-labelledby="library-title">
+              <header class="panel-card__header">
+                <h3 id="library-title">Musikbibliothek</h3>
+              </header>
+              <dl class="system-stats">
+                <div><dt>Tracks analysiert</dt><dd id="library-track-count">--</dd></div>
+                <div><dt>Quarantäne</dt><dd id="library-quarantine">--</dd></div>
+              </dl>
+              <form class="admin-form" id="library-form" autocomplete="off">
+                <label class="input">
+                  <span class="input__label">Musikpfad</span>
+                  <input type="text" id="library-music-path" name="music_path" />
+                </label>
+                <label class="input">
+                  <span class="input__label">DATABASE_URL</span>
+                  <input type="text" id="library-database-dsn" name="database_dsn" />
+                </label>
+                <button class="button" type="submit">Einstellungen speichern</button>
+              </form>
+            </article>
+          </section>
+
+          <section class="tab-panel" data-tab="light" role="tabpanel" hidden>
+            <article class="panel-card" aria-labelledby="light-title">
+              <header class="panel-card__header">
+                <h3 id="light-title">Daslight 5 / OSC</h3>
+                <button class="button button--ghost" id="light-resync" type="button">Bar-Reset senden</button>
+              </header>
+              <form class="admin-form" id="light-form">
+                <label class="input">
+                  <span class="input__label">Ziel-IP</span>
+                  <input type="text" id="light-host" name="target_host" placeholder="192.168.x.x" />
+                </label>
+                <label class="input">
+                  <span class="input__label">Port</span>
+                  <input type="number" id="light-port" name="target_port" min="1" max="65535" />
+                </label>
+                <fieldset class="toggle-form">
+                  <legend>Modi</legend>
+                  <label class="toggle">
+                    <input type="checkbox" id="light-superscenes" name="superscenes_enabled" />
+                    <span>Superscenes automatisch erlauben</span>
+                  </label>
+                  <label class="toggle">
+                    <input type="checkbox" id="light-fog" name="fog_enabled" />
+                    <span>Nebelmaschine freigeben</span>
+                  </label>
+                </fieldset>
+                <button class="button" type="submit">OSC speichern</button>
+              </form>
+            </article>
+          </section>
+
+          <section class="tab-panel" data-tab="analysis" role="tabpanel" hidden>
+            <article class="panel-card" aria-labelledby="analysis-title">
+              <header class="panel-card__header">
+                <h3 id="analysis-title">Analyse &amp; DJ-Brain</h3>
+              </header>
+              <form class="admin-form grid" id="analysis-form">
+                <label class="input">
+                  <span class="input__label">Key-Gewichtung</span>
+                  <input type="number" id="analysis-key" name="key_weight" step="0.1" min="0" />
+                </label>
+                <label class="input">
+                  <span class="input__label">BPM-Gewichtung</span>
+                  <input type="number" id="analysis-bpm" name="bpm_weight" step="0.1" min="0" />
+                </label>
+                <label class="input">
+                  <span class="input__label">Energie-Gewichtung</span>
+                  <input type="number" id="analysis-energy" name="energy_weight" step="0.1" min="0" />
+                </label>
+                <label class="input">
+                  <span class="input__label">Genre-Gewichtung</span>
+                  <input type="number" id="analysis-genre" name="genre_weight" step="0.1" min="0" />
+                </label>
+                <label class="input">
+                  <span class="input__label">Recency-Gewichtung</span>
+                  <input type="number" id="analysis-recency" name="recency_weight" step="0.1" min="0" />
+                </label>
+                <label class="input">
+                  <span class="input__label">Requests-Gewichtung</span>
+                  <input type="number" id="analysis-request" name="request_weight" step="0.1" min="0" />
+                </label>
+                <label class="input grid__full">
+                  <span class="input__label">Soft-Spacing (Zwischen-Songs)</span>
+                  <input type="number" id="analysis-spacing" name="soft_spacing" min="0" max="5" />
+                </label>
+                <div class="grid__full">
+                  <button class="button" type="submit">Analyse speichern</button>
+                </div>
+              </form>
+            </article>
+          </section>
+
+          <section class="tab-panel" data-tab="diagnostics" role="tabpanel" hidden>
+            <article class="panel-card" aria-labelledby="diagnostics-title">
+              <header class="panel-card__header">
+                <h3 id="diagnostics-title">Protokolle &amp; Diagnose</h3>
+              </header>
+              <dl class="system-stats">
+                <div><dt>Runtime-Logs</dt><dd id="diagnostics-runtime">--</dd></div>
+                <div><dt>Persistente Logs</dt><dd id="diagnostics-persistent">--</dd></div>
+                <div><dt>Cache</dt><dd id="diagnostics-cache">--</dd></div>
+                <div><dt>Konfiguration</dt><dd id="diagnostics-config">--</dd></div>
+                <div><dt>Letzter Fehler</dt><dd id="diagnostics-last-error">Keine Einträge</dd></div>
+              </dl>
+            </article>
+
+            <article class="panel-card" aria-labelledby="accounts-title">
+              <header class="panel-card__header">
+                <h3 id="accounts-title">Admin-Zugänge</h3>
+              </header>
+              <div class="admin-accounts" id="accounts-list" role="list"></div>
+            </article>
           </section>
         </div>
-      </section>
-
-      <section class="admin-card" id="accounts-card" {% if not admin %}hidden{% endif %}>
-        <h2>Admin-Passwörter</h2>
-        <p class="admin-card__lead">
-          Hier kannst du alle Admin-Passwörter verwalten. Bitte wähle starke, eindeutige Passwörter.
-        </p>
-        <div class="admin-accounts" id="accounts-list" role="list"></div>
       </section>
     </main>
 
