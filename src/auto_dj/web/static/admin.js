@@ -1,5 +1,3 @@
-const loginForm = document.getElementById("login-form");
-const loginCard = document.getElementById("login-card");
 const controlCard = document.getElementById("control-card");
 const accountsList = document.getElementById("accounts-list");
 const logoutButton = document.getElementById("logout-button");
@@ -145,24 +143,19 @@ function clearSystemCards() {
 }
 
 function setAuthenticated(isAuthenticated) {
-  if (loginCard) {
-    loginCard.hidden = isAuthenticated;
-  }
-  if (controlCard) {
-    controlCard.hidden = !isAuthenticated;
-  }
-
-  if (isAuthenticated) {
-    activateTab("system");
-    loadControlCenter();
-    startSystemUpdates();
-  } else {
+  if (!isAuthenticated) {
     stopSystemUpdates();
     clearSystemCards();
-    if (accountsList) {
-      accountsList.innerHTML = "";
-    }
+    window.location.href = "/admin/login";
+    return;
   }
+
+  if (controlCard) {
+    controlCard.hidden = false;
+  }
+  activateTab("system");
+  loadControlCenter();
+  startSystemUpdates();
 }
 
 function renderAccounts(accounts) {
@@ -549,31 +542,6 @@ async function loadControlCenter() {
   ]);
 }
 
-if (loginForm) {
-  loginForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const formData = new FormData(loginForm);
-    const payload = Object.fromEntries(formData.entries());
-    try {
-      const response = await apiFetch("/admin/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.detail || "Login fehlgeschlagen");
-      }
-      showToast("Anmeldung erfolgreich", "success");
-      setAuthenticated(true);
-    } catch (error) {
-      showToast(error.message || "Unbekannter Fehler", "error");
-    }
-  });
-}
-
 if (logoutButton) {
   logoutButton.addEventListener("click", async () => {
     try {
@@ -581,7 +549,6 @@ if (logoutButton) {
     } finally {
       showToast("Abgemeldet", "info");
       setAuthenticated(false);
-      window.location.reload();
     }
   });
 }
@@ -854,6 +821,6 @@ if (analysisForm) {
   });
 }
 
-if (controlCard && !controlCard.hasAttribute("hidden")) {
+if (controlCard) {
   setAuthenticated(true);
 }

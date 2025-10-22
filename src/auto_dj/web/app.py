@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, ConfigDict, Field
@@ -387,6 +387,19 @@ async def index(
     )
 
 
+@app.get("/admin/login", response_class=HTMLResponse)
+async def admin_login_page(
+    request: Request,
+    admin: Optional[AdminUser] = Depends(optional_admin),
+) -> Response:
+    if admin:
+        return RedirectResponse(
+            url=request.url_for("admin_dashboard"),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+    return _TEMPLATES.TemplateResponse("admin_login.html", {"request": request})
+
+
 @app.get("/queue", response_model=QueueStatusOut)
 async def list_queue(queue: QueueManager = Depends(get_queue_manager)) -> QueueStatusOut:
     status = queue.status()
@@ -396,7 +409,7 @@ async def list_queue(queue: QueueManager = Depends(get_queue_manager)) -> QueueS
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(
     request: Request,
-    admin: Optional[AdminUser] = Depends(optional_admin),
+    admin: AdminUser = Depends(require_admin),
 ) -> HTMLResponse:
     return _TEMPLATES.TemplateResponse("admin.html", {"request": request, "admin": admin})
 

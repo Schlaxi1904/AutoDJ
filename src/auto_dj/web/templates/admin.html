@@ -20,32 +20,12 @@
           <p>Verwalte sichere Zugänge und passe Passwörter flexibel an.</p>
         </div>
         <div class="admin-session" id="admin-session">
-          {% if admin %}
           <span class="badge badge--green">Angemeldet als {{ admin.username }}</span>
           <button class="button button--ghost" id="logout-button" type="button">Abmelden</button>
-          {% else %}
-          <span class="badge">Nicht angemeldet</span>
-          {% endif %}
         </div>
       </header>
 
-      <section class="admin-card" id="login-card" {% if admin %}hidden{% endif %}>
-        <h2>Anmeldung</h2>
-        <form class="admin-form" id="login-form">
-          <label class="input" for="login-username">
-            <span class="input__label">Benutzername</span>
-            <input id="login-username" name="username" type="text" placeholder="admin" required />
-          </label>
-          <label class="input" for="login-password">
-            <span class="input__label">Passwort</span>
-            <input id="login-password" name="password" type="password" required />
-          </label>
-          <button class="button" type="submit">Anmelden</button>
-        </form>
-        <p class="admin-hint">Standard-Login: <code>admin / Admin123</code> &ndash; bitte direkt ändern.</p>
-      </section>
-
-      <section class="admin-card" id="control-card" {% if not admin %}hidden{% endif %}>
+      <section class="admin-card" id="control-card">
         <h2>Kontrollzentrum</h2>
         <p class="admin-card__lead">
           Sämtliche Module sind maximal zwei Klicks entfernt. Nutze die Tabs, um schnell zwischen

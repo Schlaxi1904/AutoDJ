@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Auto-DJ Admin Login</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}" />
+  </head>
+  <body class="admin-body admin-body--login">
+    <main class="admin-shell admin-shell--login">
+      <section class="admin-card admin-card--login">
+        <header class="admin-header admin-header--login">
+          <div>
+            <h1>Admin Login</h1>
+            <p>Melde dich an, um das Auto-DJ Kontrollzentrum zu öffnen.</p>
+          </div>
+        </header>
+        <form class="admin-form" id="login-form" autocomplete="off">
+          <label class="input" for="login-username">
+            <span class="input__label">Benutzername</span>
+            <input id="login-username" name="username" type="text" placeholder="admin" required />
+          </label>
+          <label class="input" for="login-password">
+            <span class="input__label">Passwort</span>
+            <input id="login-password" name="password" type="password" required />
+          </label>
+          <button class="button" type="submit">Anmelden</button>
+        </form>
+        <p class="admin-hint">Standard-Login: <code>admin / Admin123</code> &ndash; bitte direkt ändern.</p>
+      </section>
+    </main>
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden>
+      <span id="toast-message"></span>
+    </div>
+    <script src="{{ url_for('static', path='login.js') }}" type="module"></script>
+  </body>
+</html>
