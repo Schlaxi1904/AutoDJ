@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+from getpass import getpass
 
 from psycopg import connect, sql
 from sqlalchemy.engine import make_url
@@ -34,7 +36,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help=(
             "Optional PostgreSQL superuser DSN to manage roles/databases. "
-            "Defaults to postgres://postgres@<host>/postgres if omitted."
+            "Defaults to postgres://postgres@<host>/postgres if omitted. "
+            "Can also be supplied via AUTO_DJ_SUPERUSER_DSN."
         ),
     )
     return parser.parse_args(argv)
@@ -51,16 +54,33 @@ def ensure_database(config: AutoDjConfig, superuser_dsn: str | None) -> None:
         raise RuntimeError("Database DSN must include username and database components")
 
     user = target_url.username
-    password = target_url.password or ""
+    role_password = target_url.password or ""
     database_name = target_url.database
 
     host = target_url.host or "localhost"
     port = target_url.port or 5432
 
+    env_superuser = os.environ.get("AUTO_DJ_SUPERUSER_DSN")
     default_superuser = f"{base_driver}://postgres@{host}:{port}/postgres"
-    super_url = make_url(superuser_dsn or default_superuser)
+    super_url = make_url(superuser_dsn or env_superuser or default_superuser)
     super_driver = super_url.drivername.split("+", 1)[0]
     super_url = super_url.set(drivername=super_driver)
+
+    if super_url.password is None:
+        env_password = os.environ.get("AUTO_DJ_SUPERUSER_PASSWORD")
+        super_password: str | None = env_password
+        if not super_password and sys.stdin.isatty():
+            try:
+                prompt_user = super_url.username or "postgres"
+                prompt_host = super_url.host or host
+                prompt_port = super_url.port or port
+                super_password = getpass(
+                    f"PostgreSQL password for {prompt_user}@{prompt_host}:{prompt_port} (leave blank to try without): "
+                )
+            except (EOFError, KeyboardInterrupt):
+                super_password = ""
+        if super_password:
+            super_url = super_url.set(password=super_password)
 
     superuser_dsn_rendered = super_url.render_as_string(hide_password=False)
     target_dsn_display = target_url.render_as_string(hide_password=True)
@@ -75,14 +95,14 @@ def ensure_database(config: AutoDjConfig, superuser_dsn: str | None) -> None:
                 if cur.fetchone() is None:
                     cur.execute(
                         sql.SQL("CREATE ROLE {} LOGIN PASSWORD {}").format(
-                            sql.Identifier(user), sql.Literal(password)
+                            sql.Identifier(user), sql.Literal(role_password)
                         )
                     )
                     print(f"Created role '{user}'")
                 else:
                     cur.execute(
                         sql.SQL("ALTER ROLE {} WITH LOGIN PASSWORD {}").format(
-                            sql.Identifier(user), sql.Literal(password)
+                            sql.Identifier(user), sql.Literal(role_password)
                         )
                     )
                     print(f"Updated password for role '{user}'")

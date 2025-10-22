@@ -50,7 +50,14 @@ Datenbankname, Benutzername und Passwort können bei Bedarf über die Umgebungsv
 `AUTO_DJ_DB_HOST`, `AUTO_DJ_DB_PORT`, `AUTO_DJ_DB_NAME`, `AUTO_DJ_DB_USER` und
 `AUTO_DJ_DB_PASSWORD` vor dem Aufruf von `install.sh` überschrieben werden. Laufzeit- und
 Persistenz-Logs lassen sich jederzeit über `AUTO_DJ_RUNTIME_LOG_ROOT` sowie
-`AUTO_DJ_PERSISTENT_LOG_ROOT` auf eigene, beschreibbare Verzeichnisse umbiegen.
+`AUTO_DJ_PERSISTENT_LOG_ROOT` auf eigene, beschreibbare Verzeichnisse umbiegen. Falls keine
+Overrides gesetzt sind und die Standardpfade unter `/run/auto-dj` bzw. `/var/log/auto-dj`
+nicht beschreibbar sind, fällt die Anwendung automatisch auf `~/.auto-dj/logs/runtime` und
+`~/.auto-dj/logs/persistent` zurück.
+
+Wer das Setup ohne das Shell-Skript ausführt (`python -m auto_dj.setup --ensure-database`),
+erhält die gleiche Passwort-Abfrage. Alternativ können `AUTO_DJ_SUPERUSER_DSN` oder
+`AUTO_DJ_SUPERUSER_PASSWORD` zur Authentifizierung gesetzt werden.
 
 Der initiale Admin-Login lautet `admin` / `Admin123` und kann nach der Anmeldung im
 Admin-Frontend (`/admin`) geändert werden. Nach erfolgreichem Login steht ein moduliertes

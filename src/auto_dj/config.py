@@ -130,21 +130,51 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.lower() in {"1", "true", "yes", "on"}
 
 
+def _prefer_writable_path(default: Path, fallback_suffix: str) -> Path:
+    """Return a writable path, falling back to the user's home if required."""
+
+    # If the caller explicitly overrides the directory through an environment
+    # variable we assume they know what they are doing and do not attempt any
+    # fallbacks.  The caller will pass the override through `_env_path` prior to
+    # invoking this helper, so only keep the default-detection behaviour here.
+    candidate = default
+    # Determine the closest existing ancestor directory and test writability.
+    probe = candidate
+    while not probe.exists() and probe != probe.parent:
+        probe = probe.parent
+
+    if probe.exists() and os.access(probe, os.W_OK):
+        return candidate
+
+    fallback_base = Path.home() / ".auto-dj" / "logs"
+    if fallback_suffix:
+        return fallback_base / fallback_suffix
+    return fallback_base
+
+
 def load_config() -> AutoDjConfig:
     """Load the Auto-DJ configuration, applying environment overrides."""
 
     default_paths = PathsConfig()
+    runtime_log_root = _env_path(
+        "AUTO_DJ_RUNTIME_LOG_ROOT", default_paths.runtime_log_root
+    )
+    if runtime_log_root == default_paths.runtime_log_root:
+        runtime_log_root = _prefer_writable_path(runtime_log_root, "runtime")
+
+    persistent_log_root = _env_path(
+        "AUTO_DJ_PERSISTENT_LOG_ROOT", default_paths.persistent_log_root
+    )
+    if persistent_log_root == default_paths.persistent_log_root:
+        persistent_log_root = _prefer_writable_path(persistent_log_root, "persistent")
+
     paths = PathsConfig(
         music_root=_env_path("AUTO_DJ_MUSIC_ROOT", default_paths.music_root),
         covers_root=_env_path("AUTO_DJ_COVERS_ROOT", default_paths.covers_root),
         cache_root=_env_path("AUTO_DJ_CACHE_ROOT", default_paths.cache_root),
         config_root=_env_path("AUTO_DJ_CONFIG_ROOT", default_paths.config_root),
-        runtime_log_root=_env_path(
-            "AUTO_DJ_RUNTIME_LOG_ROOT", default_paths.runtime_log_root
-        ),
-        persistent_log_root=_env_path(
-            "AUTO_DJ_PERSISTENT_LOG_ROOT", default_paths.persistent_log_root
-        ),
+        runtime_log_root=runtime_log_root,
+        persistent_log_root=persistent_log_root,
     )
 
     database_dsn = os.environ.get("AUTO_DJ_DATABASE_DSN")

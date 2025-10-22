@@ -24,14 +24,21 @@ def configure_logging(runtime_root: Path, persistent_root: Path, level: int = lo
     if persistent_override:
         persistent_root = Path(persistent_override)
 
-    try:
-        runtime_root.mkdir(parents=True, exist_ok=True)
-        persistent_root.mkdir(parents=True, exist_ok=True)
-    except PermissionError as exc:
-        raise RuntimeError(
-            "Unable to create log directories. Set AUTO_DJ_RUNTIME_LOG_ROOT and "
-            "AUTO_DJ_PERSISTENT_LOG_ROOT to writable paths."
-        ) from exc
+    def ensure_dir(path: Path, fallback_suffix: str) -> Path:
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            return path
+        except PermissionError:
+            fallback = Path.home() / ".auto-dj" / "logs" / fallback_suffix
+            fallback.mkdir(parents=True, exist_ok=True)
+            print(
+                f"[logging] Falling back to user log directory {fallback} because "
+                f"{path} is not writable."
+            )
+            return fallback
+
+    runtime_root = ensure_dir(runtime_root, "runtime")
+    persistent_root = ensure_dir(persistent_root, "persistent")
 
     formatter = logging.Formatter(
         "%(asctime)s | %(levelname)s | %(name)s | %(message)s",
