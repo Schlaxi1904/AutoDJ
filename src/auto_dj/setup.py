@@ -2,14 +2,12 @@
 from __future__ import annotations
 
 import argparse
-import os
 import sys
-from dataclasses import replace
 
 from psycopg import connect, sql
 from sqlalchemy.engine import make_url
 
-from .config import AutoDjConfig
+from .config import AutoDjConfig, load_config
 from .database.session import Database
 from .services.admin import AdminService
 
@@ -113,14 +111,7 @@ def ensure_database(config: AutoDjConfig, superuser_dsn: str | None) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    config = AutoDjConfig()
-
-    database_dsn_override = os.environ.get("AUTO_DJ_DATABASE_DSN")
-    if database_dsn_override:
-        config = replace(
-            config,
-            database=replace(config.database, dsn=database_dsn_override),
-        )
+    config = load_config()
 
     database = Database(config.database)
 

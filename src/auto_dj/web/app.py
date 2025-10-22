@@ -9,10 +9,10 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, s
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import or_, select
 
-from ..config import AutoDjConfig
+from ..config import AutoDjConfig, load_config
 from ..database.models import AdminUser, QueueEntry, Track
 from ..database.session import Database
 from ..services.admin import AdminService
@@ -24,13 +24,14 @@ app = FastAPI(title="Auto-DJ")
 _PACKAGE_DIR = Path(__file__).resolve().parent
 _TEMPLATES = Jinja2Templates(directory=str(_PACKAGE_DIR / "templates"))
 _STATIC_DIR = _PACKAGE_DIR / "static"
+_CONFIG = load_config()
 
 if _STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 
 def get_config() -> AutoDjConfig:
-    return AutoDjConfig()
+    return _CONFIG
 
 
 def get_database(config: AutoDjConfig = Depends(get_config)) -> Database:
@@ -92,8 +93,7 @@ class TrackOut(BaseModel):
     key_camelot: str
     energy_avg: float
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class QueueEntryOut(BaseModel):
@@ -103,8 +103,7 @@ class QueueEntryOut(BaseModel):
     created_at: datetime
     status: str
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class QueueStatusOut(BaseModel):
@@ -118,8 +117,7 @@ class AdminAccountOut(BaseModel):
     created_at: datetime
     last_login_at: Optional[datetime]
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AdminLoginRequest(BaseModel):
@@ -193,8 +191,7 @@ class TrackSearchOut(BaseModel):
     genre: str
     energy_avg: float
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 @app.get("/tracks/search", response_model=List[TrackSearchOut])

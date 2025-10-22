@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import contextmanager
 from logging import Logger
 from pathlib import Path
@@ -15,8 +16,22 @@ def configure_logging(runtime_root: Path, persistent_root: Path, level: int = lo
     to persistent storage on warnings/errors.
     """
 
-    runtime_root.mkdir(parents=True, exist_ok=True)
-    persistent_root.mkdir(parents=True, exist_ok=True)
+    runtime_override = os.environ.get("AUTO_DJ_RUNTIME_LOG_ROOT")
+    persistent_override = os.environ.get("AUTO_DJ_PERSISTENT_LOG_ROOT")
+
+    if runtime_override:
+        runtime_root = Path(runtime_override)
+    if persistent_override:
+        persistent_root = Path(persistent_override)
+
+    try:
+        runtime_root.mkdir(parents=True, exist_ok=True)
+        persistent_root.mkdir(parents=True, exist_ok=True)
+    except PermissionError as exc:
+        raise RuntimeError(
+            "Unable to create log directories. Set AUTO_DJ_RUNTIME_LOG_ROOT and "
+            "AUTO_DJ_PERSISTENT_LOG_ROOT to writable paths."
+        ) from exc
 
     formatter = logging.Formatter(
         "%(asctime)s | %(levelname)s | %(name)s | %(message)s",

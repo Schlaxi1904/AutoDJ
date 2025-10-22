@@ -26,6 +26,17 @@ DB_PORT="${AUTO_DJ_DB_PORT:-5432}"
 
 export AUTO_DJ_DATABASE_DSN="postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
 
+# Ensure log directories exist for non-root environments. Default to a writable path
+# inside the project unless the caller provides explicit overrides.
+if [ -z "${AUTO_DJ_RUNTIME_LOG_ROOT:-}" ]; then
+  export AUTO_DJ_RUNTIME_LOG_ROOT="${PROJECT_ROOT}/logs/runtime"
+fi
+if [ -z "${AUTO_DJ_PERSISTENT_LOG_ROOT:-}" ]; then
+  export AUTO_DJ_PERSISTENT_LOG_ROOT="${PROJECT_ROOT}/logs/persistent"
+fi
+
+mkdir -p "${AUTO_DJ_RUNTIME_LOG_ROOT}" "${AUTO_DJ_PERSISTENT_LOG_ROOT}"
+
 # Derive superuser connection details. These can be overridden via environment
 # variables so the installer can authenticate with PostgreSQL even when password
 # authentication is required (e.g. Debian/Raspberry Pi images).

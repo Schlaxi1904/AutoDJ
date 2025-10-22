@@ -7,7 +7,7 @@ import logging
 import uvicorn
 
 from .audio.engine import AudioEngine
-from .config import DEFAULT_CONFIG
+from .config import load_config
 from .database.session import Database
 from .services.dj_brain import DjBrain
 from .services.queue import QueueManager
@@ -20,12 +20,13 @@ def main() -> None:
     parser.add_argument("service", choices=["web", "engine", "brain"], help="Which service to start")
     args = parser.parse_args()
 
-    configure_logging(DEFAULT_CONFIG.paths.runtime_log_root, DEFAULT_CONFIG.paths.persistent_log_root)
+    config = load_config()
+    configure_logging(config.paths.runtime_log_root, config.paths.persistent_log_root)
 
     if args.service == "web":
         uvicorn.run(app, host="0.0.0.0", port=8080, log_level="info")
     elif args.service == "engine":
-        engine = AudioEngine(DEFAULT_CONFIG.audio)
+        engine = AudioEngine(config.audio)
         engine.start()
         try:
             while True:
@@ -33,9 +34,9 @@ def main() -> None:
         except KeyboardInterrupt:
             engine.stop()
     elif args.service == "brain":
-        db = Database(DEFAULT_CONFIG.database)
-        queue = QueueManager(db, DEFAULT_CONFIG.queue_policy)
-        brain = DjBrain(DEFAULT_CONFIG)
+        db = Database(config.database)
+        queue = QueueManager(db, config.queue_policy)
+        brain = DjBrain(config)
         logging.getLogger(__name__).info("Brain service initialised", extra={"queue_length": queue.status().remaining_slots})
 
 

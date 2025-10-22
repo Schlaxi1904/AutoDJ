@@ -19,6 +19,11 @@ Programmierungs-Entwurf für den Auto-DJ mit Daslight-5-Integration.
 # Abhängigkeiten installieren, Datenbanktabellen erstellen und Standard-Admin anlegen
 # (legt standardmäßig den PostgreSQL-User "auto-dj" mit dem Passwort "auto-dj" an)
 #
+# Das Skript legt standardmäßig Log-Verzeichnisse unter ./logs an. Für eigene
+# Pfade können vorab z. B. gesetzt werden:
+# export AUTO_DJ_RUNTIME_LOG_ROOT="/home/pi/autodj/logs/runtime"
+# export AUTO_DJ_PERSISTENT_LOG_ROOT="/home/pi/autodj/logs/persistent"
+#
 # Falls PostgreSQL Superuser-Zugangsdaten erforderlich sind, fragt das Skript das
 # Passwort interaktiv ab. Für einen nicht-interaktiven Betrieb können die Werte
 # vorab gesetzt werden, z. B.:
@@ -43,7 +48,9 @@ Der Installer exportiert automatisch eine `AUTO_DJ_DATABASE_DSN`, sodass sich de
 mit dem Datenbank-Benutzer `auto-dj` und dem gleichnamigen Passwort verbindet. Host, Port,
 Datenbankname, Benutzername und Passwort können bei Bedarf über die Umgebungsvariablen
 `AUTO_DJ_DB_HOST`, `AUTO_DJ_DB_PORT`, `AUTO_DJ_DB_NAME`, `AUTO_DJ_DB_USER` und
-`AUTO_DJ_DB_PASSWORD` vor dem Aufruf von `install.sh` überschrieben werden.
+`AUTO_DJ_DB_PASSWORD` vor dem Aufruf von `install.sh` überschrieben werden. Laufzeit- und
+Persistenz-Logs lassen sich jederzeit über `AUTO_DJ_RUNTIME_LOG_ROOT` sowie
+`AUTO_DJ_PERSISTENT_LOG_ROOT` auf eigene, beschreibbare Verzeichnisse umbiegen.
 
 Der initiale Admin-Login lautet `admin` / `Admin123` und kann nach der Anmeldung im
 Admin-Frontend (`/admin`) geändert werden.

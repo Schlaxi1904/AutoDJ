@@ -1,6 +1,7 @@
 """Configuration models and defaults for the Auto-DJ system."""
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
@@ -115,5 +116,55 @@ class AutoDjConfig:
     )
 
 
-DEFAULT_CONFIG = AutoDjConfig()
-"""Shared default configuration instance."""
+def _env_path(name: str, default: Path) -> Path:
+    value = os.environ.get(name)
+    if value:
+        return Path(value)
+    return default
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.lower() in {"1", "true", "yes", "on"}
+
+
+def load_config() -> AutoDjConfig:
+    """Load the Auto-DJ configuration, applying environment overrides."""
+
+    default_paths = PathsConfig()
+    paths = PathsConfig(
+        music_root=_env_path("AUTO_DJ_MUSIC_ROOT", default_paths.music_root),
+        covers_root=_env_path("AUTO_DJ_COVERS_ROOT", default_paths.covers_root),
+        cache_root=_env_path("AUTO_DJ_CACHE_ROOT", default_paths.cache_root),
+        config_root=_env_path("AUTO_DJ_CONFIG_ROOT", default_paths.config_root),
+        runtime_log_root=_env_path(
+            "AUTO_DJ_RUNTIME_LOG_ROOT", default_paths.runtime_log_root
+        ),
+        persistent_log_root=_env_path(
+            "AUTO_DJ_PERSISTENT_LOG_ROOT", default_paths.persistent_log_root
+        ),
+    )
+
+    database_dsn = os.environ.get("AUTO_DJ_DATABASE_DSN")
+    if not database_dsn:
+        user = os.environ.get("AUTO_DJ_DB_USER", "auto-dj")
+        password = os.environ.get("AUTO_DJ_DB_PASSWORD", "auto-dj")
+        host = os.environ.get("AUTO_DJ_DB_HOST", "localhost")
+        port = os.environ.get("AUTO_DJ_DB_PORT", "5432")
+        name = os.environ.get("AUTO_DJ_DB_NAME", "auto_dj")
+        database_dsn = (
+            f"postgresql+psycopg://{user}:{password}@{host}:{port}/{name}"
+        )
+
+    database = DatabaseConfig(
+        dsn=database_dsn,
+        echo=_env_bool("AUTO_DJ_DB_ECHO", False),
+    )
+
+    return AutoDjConfig(paths=paths, database=database)
+
+
+DEFAULT_CONFIG = load_config()
+"""Shared default configuration instance with environment overrides applied."""
