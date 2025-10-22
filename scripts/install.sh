@@ -16,6 +16,14 @@ source "${VENV_PATH}/bin/activate"
 pip install --upgrade pip
 pip install -e "${PROJECT_ROOT}"
 
+# Ensure the PostgreSQL role and database exist before bootstrapping tables.
+SETUP_ARGS=("--ensure-database")
+if [ -n "${AUTO_DJ_SUPERUSER_DSN:-}" ]; then
+  SETUP_ARGS+=("--database-superuser-dsn" "${AUTO_DJ_SUPERUSER_DSN}")
+fi
+
+python -m auto_dj.setup "${SETUP_ARGS[@]}"
+
 # Initialize the database schema and ensure the default admin account exists.
 python -m auto_dj.setup --init-db --ensure-admin
 
