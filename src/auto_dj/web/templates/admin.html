@@ -45,6 +45,35 @@
         <p class="admin-hint">Standard-Login: <code>admin / Admin123</code> &ndash; bitte direkt ändern.</p>
       </section>
 
+      <section class="admin-card" id="dashboard-card" {% if not admin %}hidden{% endif %}>
+        <h2>Live-Dashboard</h2>
+        <p class="admin-card__lead">
+          Verwalte laufende Songs, die Queue und wichtige Systemaktionen. Alle Steuerungen sind
+          barrierearm gestaltet und für Touch optimiert.
+        </p>
+        <div class="admin-dashboard-grid">
+          <section class="dashboard-panel" aria-labelledby="dashboard-now-playing-title">
+            <header class="dashboard-panel__header">
+              <h3 id="dashboard-now-playing-title">Now / Next</h3>
+              <button class="button button--ghost" id="refresh-dashboard" type="button">
+                Aktualisieren
+              </button>
+            </header>
+            <div class="dashboard-now" id="dashboard-now-playing" aria-live="polite">
+              <p class="admin-empty">Keine Wiedergabe aktiv.</p>
+            </div>
+          </section>
+
+          <section class="dashboard-panel" aria-labelledby="dashboard-queue-title">
+            <header class="dashboard-panel__header">
+              <h3 id="dashboard-queue-title">Queue-Verwaltung</h3>
+              <span class="dashboard-meta">Freie Slots: <strong id="dashboard-remaining">--</strong></span>
+            </header>
+            <ul class="dashboard-queue" id="dashboard-queue" role="list" aria-live="polite"></ul>
+          </section>
+        </div>
+      </section>
+
       <section class="admin-card" id="accounts-card" {% if not admin %}hidden{% endif %}>
         <h2>Admin-Passwörter</h2>
         <p class="admin-card__lead">

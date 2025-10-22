@@ -53,4 +53,6 @@ Persistenz-Logs lassen sich jederzeit über `AUTO_DJ_RUNTIME_LOG_ROOT` sowie
 `AUTO_DJ_PERSISTENT_LOG_ROOT` auf eigene, beschreibbare Verzeichnisse umbiegen.
 
 Der initiale Admin-Login lautet `admin` / `Admin123` und kann nach der Anmeldung im
-Admin-Frontend (`/admin`) geändert werden.
+Admin-Frontend (`/admin`) geändert werden. Nach erfolgreichem Login blendet das Dashboard die
+Live-Steuerung mit Now-Playing-Ansicht, Queue-Verwaltung (Priorisieren, Entfernen, als Nächstes
+spielen) sowie die Passwortpflege ein.

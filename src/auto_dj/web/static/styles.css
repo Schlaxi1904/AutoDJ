@@ -456,6 +456,113 @@ body {
   gap: 1rem;
 }
 
+.admin-dashboard-grid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.dashboard-panel {
+  background: rgba(14, 17, 27, 0.9);
+  border: 1px solid rgba(100, 114, 255, 0.2);
+  border-radius: 20px;
+  padding: 1.5rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.dashboard-panel__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+.dashboard-meta {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.dashboard-now {
+  display: grid;
+  gap: 1rem;
+}
+
+.dashboard-now__card {
+  background: rgba(10, 13, 21, 0.95);
+  border: 1px solid rgba(100, 114, 255, 0.25);
+  border-radius: 18px;
+  padding: 1.25rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.dashboard-now__card header h4 {
+  margin: 0;
+}
+
+.dashboard-now__card header p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.dashboard-now__card dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.dashboard-now__card dt {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.dashboard-now__card dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.dashboard-queue {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+}
+
+.dashboard-queue__item {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  background: rgba(10, 13, 21, 0.95);
+  border: 1px solid rgba(100, 114, 255, 0.25);
+  border-radius: 18px;
+  padding: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.dashboard-queue__meta h4 {
+  margin: 0 0 0.25rem;
+}
+
+.dashboard-queue__meta p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.dashboard-queue__actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.queue-action {
+  font-size: 0.85rem;
+}
+
 .account-item {
   background: rgba(14, 17, 27, 0.9);
   border: 1px solid rgba(100, 114, 255, 0.25);
@@ -515,5 +622,9 @@ body {
 
   .admin-card {
     padding: 1.5rem;
+  }
+
+  .dashboard-panel {
+    padding: 1.25rem;
   }
 }

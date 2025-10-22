@@ -106,11 +106,6 @@ class QueueEntryOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class QueueStatusOut(BaseModel):
-    entries: List[QueueEntryOut]
-    remaining_slots: int
-
-
 class AdminAccountOut(BaseModel):
     id: int
     username: str
@@ -127,6 +122,17 @@ class AdminLoginRequest(BaseModel):
 
 class PasswordChangeRequest(BaseModel):
     new_password: str
+
+
+class QueueStatusOut(BaseModel):
+    entries: List[QueueEntryOut]
+    remaining_slots: int
+
+
+class AdminDashboardStateOut(BaseModel):
+    now_playing: Optional[QueueEntryOut]
+    queue: List[QueueEntryOut]
+    remaining_slots: int
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -270,3 +276,56 @@ async def admin_change_password(
     except ValueError as exc:  # pragma: no cover - simple validation branch
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.get("/admin/state", response_model=AdminDashboardStateOut)
+async def admin_state(
+    queue: QueueManager = Depends(get_queue_manager),
+    _: AdminUser = Depends(require_admin),
+) -> AdminDashboardStateOut:
+    status_snapshot = queue.status()
+    now_playing = queue.current_track()
+    return AdminDashboardStateOut(
+        now_playing=now_playing,
+        queue=status_snapshot.entries,
+        remaining_slots=status_snapshot.remaining_slots,
+    )
+
+
+@app.delete("/admin/queue/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_remove_queue_entry(
+    entry_id: int,
+    queue: QueueManager = Depends(get_queue_manager),
+    _: AdminUser = Depends(require_admin),
+) -> Response:
+    try:
+        queue.remove(entry_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/admin/queue/{entry_id}/promote", response_model=QueueEntryOut)
+async def admin_promote_queue_entry(
+    entry_id: int,
+    queue: QueueManager = Depends(get_queue_manager),
+    _: AdminUser = Depends(require_admin),
+) -> QueueEntry:
+    try:
+        entry = queue.promote(entry_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return entry
+
+
+@app.post("/admin/queue/{entry_id}/play", response_model=QueueEntryOut)
+async def admin_mark_playing_queue_entry(
+    entry_id: int,
+    queue: QueueManager = Depends(get_queue_manager),
+    _: AdminUser = Depends(require_admin),
+) -> QueueEntry:
+    try:
+        entry = queue.mark_playing(entry_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return entry

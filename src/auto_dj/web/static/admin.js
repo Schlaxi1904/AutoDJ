@@ -2,9 +2,16 @@ const loginForm = document.getElementById("login-form");
 const loginCard = document.getElementById("login-card");
 const accountsCard = document.getElementById("accounts-card");
 const accountsList = document.getElementById("accounts-list");
+const dashboardCard = document.getElementById("dashboard-card");
+const dashboardNowPlaying = document.getElementById("dashboard-now-playing");
+const dashboardRemaining = document.getElementById("dashboard-remaining");
+const dashboardQueue = document.getElementById("dashboard-queue");
+const refreshDashboardButton = document.getElementById("refresh-dashboard");
 const logoutButton = document.getElementById("logout-button");
 const toast = document.getElementById("toast");
 const toastMessage = document.getElementById("toast-message");
+
+let dashboardInterval = null;
 
 function showToast(message, variant = "info") {
   toastMessage.textContent = message;
@@ -93,6 +100,125 @@ function renderAccounts(accounts) {
   }
 }
 
+function renderNowPlaying(entry) {
+  dashboardNowPlaying.innerHTML = "";
+  if (!entry) {
+    const empty = document.createElement("p");
+    empty.className = "admin-empty";
+    empty.textContent = "Keine Wiedergabe aktiv.";
+    dashboardNowPlaying.appendChild(empty);
+    return;
+  }
+
+  const card = document.createElement("article");
+  card.className = "dashboard-now__card";
+  card.innerHTML = `
+    <header>
+      <h4>${entry.track.title}</h4>
+      <p>${entry.track.artist}</p>
+    </header>
+    <dl>
+      <div><dt>Quelle</dt><dd>${entry.source}</dd></div>
+      <div><dt>Status</dt><dd>${entry.status}</dd></div>
+      <div><dt>Energie</dt><dd>${Math.round(entry.track.energy_avg * 100)}%</dd></div>
+      <div><dt>BPM</dt><dd>${Math.round(entry.track.bpm)}</dd></div>
+    </dl>
+  `;
+  dashboardNowPlaying.appendChild(card);
+}
+
+function createQueueAction(label, action) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "button button--ghost queue-action";
+  button.textContent = label;
+  button.dataset.action = action;
+  return button;
+}
+
+function renderQueue(entries) {
+  dashboardQueue.innerHTML = "";
+  if (!entries.length) {
+    const empty = document.createElement("li");
+    empty.className = "admin-empty";
+    empty.textContent = "Keine Einträge in der Queue.";
+    dashboardQueue.appendChild(empty);
+    return;
+  }
+
+  for (const entry of entries) {
+    const item = document.createElement("li");
+    item.className = "dashboard-queue__item";
+    item.dataset.entryId = entry.id;
+
+    const meta = document.createElement("div");
+    meta.className = "dashboard-queue__meta";
+    meta.innerHTML = `
+      <h4>${entry.track.title}</h4>
+      <p>${entry.track.artist}</p>
+      <span class="badge">${entry.source}</span>
+    `;
+    item.appendChild(meta);
+
+    const actions = document.createElement("div");
+    actions.className = "dashboard-queue__actions";
+    const playButton = createQueueAction("Als Nächstes", "play");
+    const promoteButton = createQueueAction("Priorisieren", "promote");
+    const deleteButton = createQueueAction("Entfernen", "delete");
+    actions.append(playButton, promoteButton, deleteButton);
+    item.appendChild(actions);
+
+    dashboardQueue.appendChild(item);
+  }
+}
+
+async function fetchDashboard() {
+  try {
+    const response = await fetch("/admin/state");
+    if (!response.ok) {
+      throw new Error("Dashboard konnte nicht geladen werden");
+    }
+    const data = await response.json();
+    dashboardRemaining.textContent = data.remaining_slots;
+    renderNowPlaying(data.now_playing);
+    renderQueue(data.queue);
+  } catch (error) {
+    showToast(error.message || "Unbekannter Fehler", "error");
+  }
+}
+
+function stopDashboardUpdates() {
+  if (dashboardInterval) {
+    clearInterval(dashboardInterval);
+    dashboardInterval = null;
+  }
+}
+
+function startDashboardUpdates() {
+  stopDashboardUpdates();
+  fetchDashboard();
+  dashboardInterval = setInterval(fetchDashboard, 5000);
+}
+
+function setAuthenticated(isAuthenticated) {
+  if (!loginCard || !accountsCard || !dashboardCard) {
+    return;
+  }
+  loginCard.hidden = isAuthenticated;
+  accountsCard.hidden = !isAuthenticated;
+  dashboardCard.hidden = !isAuthenticated;
+
+  if (isAuthenticated) {
+    fetchAccounts();
+    startDashboardUpdates();
+  } else {
+    stopDashboardUpdates();
+    accountsList.innerHTML = "";
+    dashboardQueue.innerHTML = "";
+    dashboardNowPlaying.innerHTML = "";
+  }
+}
+
 if (loginForm) {
   loginForm.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -110,10 +236,8 @@ if (loginForm) {
         const data = await response.json().catch(() => ({}));
         throw new Error(data.detail || "Login fehlgeschlagen");
       }
-      loginCard.hidden = true;
-      accountsCard.hidden = false;
       showToast("Anmeldung erfolgreich", "success");
-      await fetchAccounts();
+      setAuthenticated(true);
     } catch (error) {
       showToast(error.message || "Unbekannter Fehler", "error");
     }
@@ -126,11 +250,62 @@ if (logoutButton) {
       await fetch("/admin/logout", { method: "POST" });
     } finally {
       showToast("Abgemeldet", "info");
+      setAuthenticated(false);
       window.location.reload();
     }
   });
 }
 
-if (accountsCard && !accountsCard.hasAttribute("hidden")) {
-  fetchAccounts();
+if (dashboardCard && !dashboardCard.hasAttribute("hidden")) {
+  setAuthenticated(true);
+}
+
+if (refreshDashboardButton) {
+  refreshDashboardButton.addEventListener("click", () => {
+    fetchDashboard();
+  });
+}
+
+if (dashboardQueue) {
+  dashboardQueue.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    const action = target.dataset.action;
+    if (!action) {
+      return;
+    }
+    const item = target.closest(".dashboard-queue__item");
+    if (!item) {
+      return;
+    }
+    const entryId = item.dataset.entryId;
+    if (!entryId) {
+      return;
+    }
+
+    try {
+      if (action === "delete") {
+        const response = await fetch(`/admin/queue/${entryId}`, { method: "DELETE" });
+        if (!response.ok) {
+          throw new Error("Entfernen fehlgeschlagen");
+        }
+      } else if (action === "promote") {
+        const response = await fetch(`/admin/queue/${entryId}/promote`, { method: "POST" });
+        if (!response.ok) {
+          throw new Error("Priorisieren fehlgeschlagen");
+        }
+      } else if (action === "play") {
+        const response = await fetch(`/admin/queue/${entryId}/play`, { method: "POST" });
+        if (!response.ok) {
+          throw new Error("Übergabe fehlgeschlagen");
+        }
+      }
+      showToast("Aktion ausgeführt", "success");
+      fetchDashboard();
+    } catch (error) {
+      showToast(error.message || "Unbekannter Fehler", "error");
+    }
+  });
 }
