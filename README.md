@@ -38,6 +38,9 @@ Programmierungs-Entwurf für den Auto-DJ mit Daslight-5-Integration.
 # export AUTO_DJ_SKIP_DB_INIT=1
 ./scripts/install.sh
 
+# Virtuelle Umgebung aktivieren, damit "python" auf die projektinternen Pakete zeigt
+source .venv/bin/activate
+
 # Dienste starten (Beispiel)
 python -m auto_dj web    # Startet die Web-API (FastAPI/Uvicorn)
 python -m auto_dj engine # Startet den Audio-Engine-Skeleton
