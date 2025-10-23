@@ -51,6 +51,7 @@ const lightForm = document.getElementById("light-form");
 const lightHost = document.getElementById("light-host");
 const lightPort = document.getElementById("light-port");
 const lightResyncButton = document.getElementById("light-resync");
+const lightBindingsContainer = document.getElementById("light-bindings");
 
 const analysisForm = document.getElementById("analysis-form");
 const analysisKey = document.getElementById("analysis-key");
@@ -69,6 +70,8 @@ const diagnosticsLastError = document.getElementById("diagnostics-last-error");
 
 let systemInterval = null;
 let togglesUpdating = false;
+const LIGHT_DEFAULT_ACTION_ORDER = ["idle", "break", "build", "drop", "outro"];
+let lightActionLabels = {};
 
 function showToast(message, variant = "info") {
   if (!toast || !toastMessage) {
@@ -376,6 +379,119 @@ function renderSystemOverview(data) {
   }
 }
 
+function getLightActionOrder(labels = {}) {
+  const order = [];
+  for (const key of Object.keys(labels)) {
+    if (!order.includes(key)) {
+      order.push(key);
+    }
+  }
+  for (const fallback of LIGHT_DEFAULT_ACTION_ORDER) {
+    if (!order.includes(fallback)) {
+      order.push(fallback);
+    }
+  }
+  return order;
+}
+
+function renderLightBindings(bindings = [], labels = {}) {
+  if (!lightBindingsContainer) {
+    return;
+  }
+  lightBindingsContainer.innerHTML = "";
+  lightActionLabels = labels ? { ...labels } : {};
+  const order = getLightActionOrder(lightActionLabels);
+  if (!Array.isArray(bindings) || bindings.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "admin-empty";
+    empty.textContent = "Keine Zuordnungen verfügbar.";
+    lightBindingsContainer.appendChild(empty);
+    return;
+  }
+
+  for (const binding of bindings) {
+    const panel = document.createElement("div");
+    panel.className = "light-binding";
+    if (binding.genre) {
+      panel.dataset.genre = binding.genre;
+    }
+    if (typeof binding.bank === "number" && binding.bank > 0) {
+      panel.dataset.bank = String(binding.bank);
+    }
+
+    const title = document.createElement("div");
+    title.className = "light-binding__title";
+    const bankSuffix = binding.bank && binding.bank > 0 ? ` (Bank ${binding.bank})` : "";
+    title.textContent = `${binding.label || binding.genre}${bankSuffix}`;
+    panel.appendChild(title);
+
+    const grid = document.createElement("div");
+    grid.className = "light-binding__grid";
+
+    for (const action of order) {
+      const wrapper = document.createElement("label");
+      wrapper.className = "input";
+      const span = document.createElement("span");
+      span.className = "input__label";
+      span.textContent = lightActionLabels[action] || action;
+      const input = document.createElement("input");
+      input.type = "number";
+      input.min = "0";
+      input.max = "99";
+      input.step = "1";
+      input.placeholder = "--";
+      input.dataset.action = action;
+      if (binding.actions && action in binding.actions && binding.actions[action] !== null) {
+        input.value = binding.actions[action];
+      }
+      wrapper.appendChild(span);
+      wrapper.appendChild(input);
+      grid.appendChild(wrapper);
+    }
+
+    panel.appendChild(grid);
+    lightBindingsContainer.appendChild(panel);
+  }
+}
+
+function collectLightBindings() {
+  if (!lightBindingsContainer) {
+    return null;
+  }
+  const result = {};
+  const panels = Array.from(lightBindingsContainer.querySelectorAll(".light-binding"));
+  for (const panel of panels) {
+    const genre = panel.dataset.genre;
+    if (!genre) {
+      continue;
+    }
+    const inputs = Array.from(panel.querySelectorAll("input[data-action]"));
+    const actionMap = {};
+    for (const input of inputs) {
+      if (!(input instanceof HTMLInputElement)) {
+        continue;
+      }
+      const action = input.dataset.action;
+      if (!action) {
+        continue;
+      }
+      const value = input.value.trim();
+      if (!value) {
+        continue;
+      }
+      const parsed = Number.parseInt(value, 10);
+      if (Number.isNaN(parsed)) {
+        continue;
+      }
+      actionMap[action] = parsed;
+    }
+    if (Object.keys(actionMap).length > 0) {
+      result[genre] = actionMap;
+    }
+  }
+  return Object.keys(result).length > 0 ? result : null;
+}
+
 async function fetchSystemOverview() {
   try {
     const response = await apiFetch("/admin/system/overview");
@@ -548,6 +664,7 @@ async function fetchLightSettings() {
     const data = await response.json();
     if (lightHost) lightHost.value = data.target_host;
     if (lightPort) lightPort.value = data.target_port;
+    renderLightBindings(data.scene_bindings || [], data.action_labels || {});
     updateToggleInputs({
       fog_enabled: data.fog_enabled,
       superscenes_enabled: data.superscenes_enabled,
@@ -853,6 +970,10 @@ if (lightForm) {
       superscenes_enabled: Boolean(lightSuperscenesToggle?.checked),
       fog_enabled: Boolean(lightFogToggle?.checked),
     };
+    const sceneBindingsPayload = collectLightBindings();
+    if (sceneBindingsPayload) {
+      payload.scene_bindings = sceneBindingsPayload;
+    }
     try {
       const response = await apiFetch("/admin/light/settings", {
         method: "POST",
@@ -868,6 +989,7 @@ if (lightForm) {
       const data = await response.json();
       if (lightHost) lightHost.value = data.target_host;
       if (lightPort) lightPort.value = data.target_port;
+      renderLightBindings(data.scene_bindings || [], data.action_labels || {});
       updateToggleInputs({
         fog_enabled: data.fog_enabled,
         superscenes_enabled: data.superscenes_enabled,

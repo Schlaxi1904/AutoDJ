@@ -37,6 +37,21 @@ _LIBRARY_SETTINGS_KEY = "library.settings"
 _LIGHT_SETTINGS_KEY = "light.settings"
 _ANALYSIS_SETTINGS_KEY = "analysis.settings"
 
+_LIGHT_GENRE_META = {
+    "techno": {"label": "Techno", "bank": 1},
+    "hardstyle": {"label": "Hardstyle", "bank": 2},
+    "house": {"label": "House", "bank": 3},
+    "pop": {"label": "Pop", "bank": 4},
+}
+_LIGHT_ACTION_LABELS = {
+    "idle": "Idle / Ambient (Slot 1)",
+    "break": "Break (Slot 2)",
+    "build": "Build (Slot 3)",
+    "drop": "Drop (Slot 4)",
+    "outro": "Outro (Slot 5)",
+}
+_LIGHT_ACTION_ORDER = tuple(_LIGHT_ACTION_LABELS.keys())
+
 if _STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
@@ -97,6 +112,45 @@ def _merge_system_toggles(settings: SettingsService, config: AutoDjConfig) -> Sy
     )
 
 
+def _sanitize_scene_bindings(raw: Dict[str, Dict[str, object]]) -> Dict[str, Dict[str, int]]:
+    sanitized: Dict[str, Dict[str, int]] = {}
+    for genre, actions in raw.items():
+        if not isinstance(actions, dict):
+            continue
+        cleaned: Dict[str, int] = {}
+        for action, value in actions.items():
+            if action not in _LIGHT_ACTION_ORDER or value is None:
+                continue
+            try:
+                number = int(str(value).strip())
+            except (TypeError, ValueError):
+                continue
+            if number < 0 or number > 99:
+                continue
+            cleaned[action] = number
+        if cleaned:
+            sanitized[genre] = cleaned
+    return sanitized
+
+
+def _merge_scene_bindings(
+    base: Dict[str, Dict[str, int]], *overrides: Dict[str, Dict[str, int]]
+) -> Dict[str, Dict[str, int]]:
+    merged: Dict[str, Dict[str, int]] = {
+        genre: dict(actions) for genre, actions in base.items()
+    }
+    for override in overrides:
+        for genre, actions in override.items():
+            if not isinstance(actions, dict):
+                continue
+            target = merged.setdefault(genre, {})
+            for action, value in actions.items():
+                if action not in _LIGHT_ACTION_ORDER:
+                    continue
+                target[action] = int(value)
+    return merged
+
+
 def _load_mixer_settings(settings: SettingsService) -> MixerSettingsOut:
     defaults = {
         "crossfade_seconds": 8.0,
@@ -118,14 +172,57 @@ def _load_light_settings(
     defaults = {
         "target_host": config.osc.target_host,
         "target_port": config.osc.target_port,
+        "scene_bindings": config.osc.scene_bindings,
     }
     stored = settings.get_dict(_LIGHT_SETTINGS_KEY, defaults)
     merged = {**defaults, **stored}
+    stored_bindings_raw = merged.get("scene_bindings", {})
+    sanitized_bindings = (
+        _sanitize_scene_bindings(stored_bindings_raw)
+        if isinstance(stored_bindings_raw, dict)
+        else {}
+    )
+    combined_bindings = _merge_scene_bindings(
+        config.osc.scene_bindings,
+        sanitized_bindings,
+    )
+
+    binding_outputs: List[LightGenreBindingOut] = []
+    for genre, meta in _LIGHT_GENRE_META.items():
+        actions = combined_bindings.get(genre, {})
+        binding_outputs.append(
+            LightGenreBindingOut(
+                genre=genre,
+                label=meta["label"],
+                bank=meta["bank"],
+                actions={
+                    action: actions.get(action)
+                    for action in _LIGHT_ACTION_ORDER
+                },
+            )
+        )
+    for genre, actions in combined_bindings.items():
+        if genre in _LIGHT_GENRE_META:
+            continue
+        binding_outputs.append(
+            LightGenreBindingOut(
+                genre=genre,
+                label=genre.title(),
+                bank=0,
+                actions={
+                    action: actions.get(action)
+                    for action in _LIGHT_ACTION_ORDER
+                },
+            )
+        )
+
     return LightSettingsOut(
         target_host=str(merged.get("target_host", defaults["target_host"])),
         target_port=int(merged.get("target_port", defaults["target_port"])),
         superscenes_enabled=toggles.superscenes_enabled,
         fog_enabled=toggles.fog_enabled,
+        scene_bindings=binding_outputs,
+        action_labels=dict(_LIGHT_ACTION_LABELS),
     )
 
 
@@ -425,11 +522,20 @@ class MusicLocationOut(BaseModel):
     available: bool
 
 
+class LightGenreBindingOut(BaseModel):
+    genre: str
+    label: str
+    bank: int
+    actions: Dict[str, Optional[int]]
+
+
 class LightSettingsOut(BaseModel):
     target_host: str
     target_port: int
     superscenes_enabled: bool
     fog_enabled: bool
+    scene_bindings: List[LightGenreBindingOut]
+    action_labels: Dict[str, str]
 
 
 class LightSettingsUpdate(BaseModel):
@@ -437,6 +543,7 @@ class LightSettingsUpdate(BaseModel):
     target_port: Optional[int] = Field(default=None, ge=1, le=65535)
     superscenes_enabled: Optional[bool] = None
     fog_enabled: Optional[bool] = None
+    scene_bindings: Optional[Dict[str, Dict[str, int]]] = None
 
 
 class AnalysisSettingsOut(BaseModel):
@@ -807,8 +914,29 @@ async def admin_update_light_settings(
             for key in list(updates.keys())
             if key in {"superscenes_enabled", "fog_enabled"}
         }
+        scene_binding_update = updates.pop("scene_bindings", None)
         if updates:
             settings.update_dict(_LIGHT_SETTINGS_KEY, updates)
+        if scene_binding_update is not None:
+            raw_bindings = (
+                scene_binding_update if isinstance(scene_binding_update, dict) else {}
+            )
+            sanitized = _sanitize_scene_bindings(raw_bindings)
+            current_settings = settings.get_dict(_LIGHT_SETTINGS_KEY, {})
+            current_bindings_raw = current_settings.get("scene_bindings", {})
+            current_sanitized = (
+                _sanitize_scene_bindings(current_bindings_raw)
+                if isinstance(current_bindings_raw, dict)
+                else {}
+            )
+            merged_bindings = _merge_scene_bindings(
+                config.osc.scene_bindings,
+                current_sanitized,
+                sanitized,
+            )
+            settings.update_dict(
+                _LIGHT_SETTINGS_KEY, {"scene_bindings": merged_bindings}
+            )
         if toggle_updates:
             settings.update_dict(_SYSTEM_TOGGLE_KEY, toggle_updates)
     toggles = _merge_system_toggles(settings, config)

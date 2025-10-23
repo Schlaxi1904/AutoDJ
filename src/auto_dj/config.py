@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 
 @dataclass(frozen=True)
@@ -51,6 +51,14 @@ class OscConfig:
     target_port: int = 4040
     inbound_port: int = 4041
     rate_limit_hz: float = 120.0
+    scene_bindings: Dict[str, Dict[str, int]] = field(
+        default_factory=lambda: {
+            "techno": {"idle": 1, "break": 2, "build": 3, "drop": 4, "outro": 5},
+            "hardstyle": {"idle": 1, "break": 2, "build": 3, "drop": 4, "outro": 5},
+            "house": {"idle": 1, "break": 2, "build": 3, "drop": 4, "outro": 5},
+            "pop": {"idle": 1, "break": 2, "build": 3, "drop": 4, "outro": 5},
+        }
+    )
 
 
 @dataclass(frozen=True)

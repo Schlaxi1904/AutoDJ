@@ -718,6 +718,59 @@ body {
   transform: translateX(24px);
 }
 
+.light-bindings-fieldset {
+  border: 1px solid rgba(124, 93, 250, 0.32);
+  border-radius: 18px;
+  padding: 1.25rem;
+  display: grid;
+  gap: 1rem;
+  background: rgba(124, 93, 250, 0.06);
+}
+
+.light-bindings-fieldset > legend {
+  padding: 0 0.4rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.light-bindings {
+  display: grid;
+  gap: 1rem;
+}
+
+.light-binding {
+  border: 1px solid rgba(100, 114, 255, 0.25);
+  border-radius: 16px;
+  padding: 1rem;
+  display: grid;
+  gap: 0.75rem;
+  background: rgba(10, 14, 26, 0.65);
+}
+
+.light-binding__title {
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  letter-spacing: 0.02em;
+}
+
+.light-binding__grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.light-binding__grid .input {
+  margin: 0;
+}
+
+.light-binding__grid .input input {
+  width: 100%;
+}
+
 .grid {
   display: grid;
   gap: 1rem;
