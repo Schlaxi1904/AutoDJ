@@ -66,7 +66,10 @@ class AdminService:
             user.updated_at = datetime.utcnow()
             session.add(user)
 
-    def reset_password(self, username: str, new_password: str) -> None:
+    def reset_password(self, username: str, new_password: str, reset_code: str) -> None:
+        expected_code = self._config.web_security.password_reset_code
+        if not reset_code or reset_code.strip() != expected_code:
+            raise ValueError("Ungültiger Zurücksetzcode")
         with self._db.session() as session:
             user = session.execute(
                 select(AdminUser).where(AdminUser.username == username)

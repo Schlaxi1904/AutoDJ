@@ -80,6 +80,7 @@ class WebSecurityConfig:
     public_enabled: bool = False
     ssl_enabled: bool = False
     session_secret: str = "auto-dj-development-secret"
+    password_reset_code: str = "19042005"
 
 
 @dataclass(frozen=True)
@@ -193,7 +194,18 @@ def load_config() -> AutoDjConfig:
         echo=_env_bool("AUTO_DJ_DB_ECHO", False),
     )
 
-    return AutoDjConfig(paths=paths, database=database)
+    web_security = WebSecurityConfig(
+        public_enabled=_env_bool("AUTO_DJ_PUBLIC_ENABLED", False),
+        ssl_enabled=_env_bool("AUTO_DJ_SSL_ENABLED", False),
+        session_secret=os.environ.get(
+            "AUTO_DJ_SESSION_SECRET", "auto-dj-development-secret"
+        ),
+        password_reset_code=os.environ.get(
+            "AUTO_DJ_ADMIN_RESET_CODE", WebSecurityConfig.password_reset_code
+        ),
+    )
+
+    return AutoDjConfig(paths=paths, database=database, web_security=web_security)
 
 
 DEFAULT_CONFIG = load_config()

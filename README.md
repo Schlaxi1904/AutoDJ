@@ -59,9 +59,16 @@ Wer das Setup ohne das Shell-Skript ausführt (`python -m auto_dj.setup --ensure
 erhält die gleiche Passwort-Abfrage. Alternativ können `AUTO_DJ_SUPERUSER_DSN` oder
 `AUTO_DJ_SUPERUSER_PASSWORD` zur Authentifizierung gesetzt werden.
 
-Der initiale Admin-Login lautet `admin` / `Admin123` und kann nach der Anmeldung im
-Admin-Frontend (`/admin`) geändert werden. Nach erfolgreichem Login steht ein moduliertes
-Kontrollzentrum mit folgenden Bereichen bereit:
+Der initiale Admin-Login lautet `admin` / `Admin123` und wird direkt unter dem Formular auf
+der Admin-Anmeldeseite angezeigt. Über den Link mit dem ⚙️-Symbol im Footer der Gäste-Seite
+gelangst du zum Login. Zusätzlich findest du im Admin-Dashboard unter **Protokolle & Diagnose →
+Admin-Zugänge** jederzeit eine Übersicht aller vorhandenen Accounts inklusive letzter
+Anmeldung. Sollte das Passwort verloren gehen, kannst du über den Button
+**„Passwort zurücksetzen“** auf der Login-Seite mit dem Sicherheitscode `19042005` ein neues
+Kennwort vergeben. Der Code lässt sich bei Bedarf über die Umgebungsvariable
+`AUTO_DJ_ADMIN_RESET_CODE` anpassen.
+
+Nach erfolgreichem Login steht ein moduliertes Kontrollzentrum mit folgenden Bereichen bereit:
 
 * **Systemübersicht** – Now-/Next-Ansicht, Queue-Verwaltung, Echtzeit-Metriken (CPU, RAM,
   Temperatur, XRUNs, OSC-Status, Netzmodus) sowie Schalter für „Nebelmaschine aktiv“,
@@ -76,6 +83,6 @@ Kontrollzentrum mit folgenden Bereichen bereit:
 * **Analyse & KI** – Feinjustierung der DJ-Brain-Gewichtungen (Key/BPM/Energie/Genre/Recency/
   Requests) inklusive Soft-Spacing-Konfiguration.
 * **Protokolle & Diagnose** – Pfade für Runtime-/Persistenz-Logs, Cache und Konfiguration,
-  letzte Fehlermeldung sowie Passwortpflege für alle Admin-Accounts.
+  letzte Fehlermeldung sowie Passwortpflege und Übersicht für alle Admin-Accounts.
 
 Die Gäste-Oberfläche verweist über ein dezentes ⚙️-Icon im Footer direkt auf die Admin-Anmeldung.

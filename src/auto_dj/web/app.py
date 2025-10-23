@@ -328,6 +328,12 @@ class PasswordChangeRequest(BaseModel):
     new_password: str
 
 
+class PasswordResetRequest(BaseModel):
+    username: str
+    new_password: str
+    reset_code: str
+
+
 class QueueStatusOut(BaseModel):
     entries: List[QueueEntryOut]
     remaining_slots: int
@@ -615,6 +621,20 @@ async def admin_change_password(
     except ValueError as exc:  # pragma: no cover - simple validation branch
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/admin/password-reset")
+async def admin_password_reset(
+    payload: PasswordResetRequest,
+    admin_service: AdminService = Depends(get_admin_service),
+) -> JSONResponse:
+    try:
+        admin_service.reset_password(
+            payload.username, payload.new_password, payload.reset_code
+        )
+    except ValueError as exc:  # pragma: no cover - simple validation branch
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return JSONResponse({"message": "reset"})
 
 
 @app.get("/admin/state", response_model=AdminDashboardStateOut)

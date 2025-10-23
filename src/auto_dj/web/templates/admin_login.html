@@ -33,6 +33,49 @@
           <button class="button" type="submit">Anmelden</button>
         </form>
         <p class="admin-hint">Standard-Login: <code>admin / Admin123</code> &ndash; bitte direkt ändern.</p>
+        <section class="admin-reset">
+          <button class="admin-reset__toggle" type="button" id="reset-toggle">
+            Passwort zurücksetzen
+          </button>
+          <form class="admin-form admin-reset__panel" id="reset-form" autocomplete="off" hidden>
+            <label class="input" for="reset-username">
+              <span class="input__label">Benutzername</span>
+              <input id="reset-username" name="username" type="text" required />
+            </label>
+            <label class="input" for="reset-new-password">
+              <span class="input__label">Neues Passwort</span>
+              <input id="reset-new-password" name="new_password" type="password" minlength="8" required />
+            </label>
+            <label class="input" for="reset-confirm-password">
+              <span class="input__label">Neues Passwort bestätigen</span>
+              <input
+                id="reset-confirm-password"
+                name="confirm_password"
+                type="password"
+                minlength="8"
+                required
+              />
+            </label>
+            <label class="input" for="reset-code">
+              <span class="input__label">Sicherheitscode</span>
+              <input
+                id="reset-code"
+                name="reset_code"
+                type="text"
+                inputmode="numeric"
+                pattern="\d{8}"
+                placeholder="19042005"
+                required
+              />
+            </label>
+            <button class="button" type="submit">Neues Passwort setzen</button>
+          </form>
+          <p class="admin-reset__hint">
+            Der Sicherheitscode <code>19042005</code> ist erforderlich, um ein Admin-Passwort neu zu vergeben.
+            Nach dem Zurücksetzen findest du alle Admin-Konten im Dashboard unter
+            <strong>Protokolle &amp; Diagnose &rarr; Admin-Zugänge</strong>.
+          </p>
+        </section>
       </section>
     </main>
     <div class="toast" id="toast" role="status" aria-live="polite" hidden>
