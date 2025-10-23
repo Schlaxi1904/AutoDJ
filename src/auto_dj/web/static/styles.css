@@ -288,10 +288,49 @@ body {
   transition: border var(--transition), box-shadow var(--transition);
 }
 
+.input select {
+  width: 100%;
+  padding: 0.9rem 1.1rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(12, 16, 28, 0.6);
+  color: var(--text-primary);
+  font-size: 1rem;
+  transition: border var(--transition), box-shadow var(--transition);
+  appearance: none;
+}
+
 .input input:focus {
   outline: none;
   border-color: rgba(124, 93, 250, 0.6);
   box-shadow: 0 0 0 3px rgba(124, 93, 250, 0.2);
+}
+
+.input select:focus {
+  outline: none;
+  border-color: rgba(124, 93, 250, 0.6);
+  box-shadow: 0 0 0 3px rgba(124, 93, 250, 0.2);
+}
+
+.input__hint {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.input-group {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.input-group select {
+  flex: 1 1 auto;
+}
+
+.input-group .button {
+  margin-top: 0;
+  white-space: nowrap;
 }
 
 .search-status {

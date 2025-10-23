@@ -172,6 +172,90 @@ def _library_state(
     )
 
 
+def _discover_music_locations(
+    settings: SettingsService, config: AutoDjConfig
+) -> List[MusicLocationOut]:
+    defaults = {
+        "music_path": str(config.paths.music_root),
+        "database_dsn": config.database.dsn,
+    }
+    stored = settings.get_dict(_LIBRARY_SETTINGS_KEY, defaults)
+    current_path = str(stored.get("music_path", defaults["music_path"]))
+
+    seen: set[str] = set()
+    locations: List[MusicLocationOut] = []
+
+    def register(path: Path, label: str, kind: str, include_if_missing: bool = False) -> None:
+        try:
+            resolved = path.expanduser()
+        except Exception:
+            return
+        if not include_if_missing and not resolved.exists():
+            return
+        normalized = str(resolved)
+        if normalized in seen:
+            return
+        seen.add(normalized)
+        locations.append(
+            MusicLocationOut(
+                path=normalized,
+                label=label,
+                kind=kind,
+                available=resolved.exists(),
+            )
+        )
+
+    register(config.paths.music_root, "Standard (System)", "default", include_if_missing=True)
+    if current_path:
+        register(Path(current_path), "Aktuelle Auswahl", "current", include_if_missing=True)
+
+    home = Path.home()
+    for folder_name in ("Music", "Musik"):
+        register(home / folder_name, f"Interner Speicher – {folder_name}", "internal")
+        register(
+            home / "AutoDJ" / folder_name,
+            f"Interner Speicher – AutoDJ/{folder_name}",
+            "internal",
+        )
+
+    external_roots = [Path("/media"), Path("/mnt"), Path("/run/media"), Path("/Volumes")]
+    for root in external_roots:
+        if not root.exists():
+            continue
+        for candidate in sorted(root.iterdir()):
+            if not candidate.is_dir():
+                continue
+            register(
+                candidate,
+                f"Externer Datenträger – {candidate.name}",
+                "external",
+            )
+            for child in (candidate / "Music", candidate / "Musik"):
+                register(
+                    child,
+                    f"Externer Datenträger – {candidate.name}/{child.name}",
+                    "external",
+                )
+
+    cloud_roots = [
+        ("Nextcloud", home / "Nextcloud"),
+        ("Nextcloud", home / "NextcloudDrive"),
+        ("Dropbox", home / "Dropbox"),
+        ("OneDrive", home / "OneDrive"),
+        ("Google Drive", home / "Google Drive"),
+        ("Google Drive", home / "GoogleDrive"),
+    ]
+    for provider, root in cloud_roots:
+        if not root.exists():
+            continue
+        register(root, f"Cloud ({provider})", "cloud")
+        for child in (root / "Music", root / "Musik"):
+            if child.exists():
+                register(child, f"Cloud ({provider}) – {child.name}", "cloud")
+
+    return locations
+
+
 def require_admin(
     request: Request,
     admin_service: AdminService = Depends(get_admin_service),
@@ -326,6 +410,13 @@ class LibraryStateOut(BaseModel):
 class LibraryUpdateRequest(BaseModel):
     music_path: Optional[str] = None
     database_dsn: Optional[str] = None
+
+
+class MusicLocationOut(BaseModel):
+    path: str
+    label: str
+    kind: str
+    available: bool
 
 
 class LightSettingsOut(BaseModel):
@@ -647,6 +738,15 @@ async def admin_library_settings(
     _: AdminUser = Depends(require_admin),
 ) -> LibraryStateOut:
     return _library_state(db, settings, config)
+
+
+@app.get("/admin/library/locations", response_model=List[MusicLocationOut])
+async def admin_library_locations(
+    settings: SettingsService = Depends(get_settings_service),
+    config: AutoDjConfig = Depends(get_config),
+    _: AdminUser = Depends(require_admin),
+) -> List[MusicLocationOut]:
+    return _discover_music_locations(settings, config)
 
 
 @app.post("/admin/library/settings", response_model=LibraryStateOut)

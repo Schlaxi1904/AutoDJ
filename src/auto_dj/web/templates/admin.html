@@ -184,9 +184,26 @@
                 <div><dt>Quarantäne</dt><dd id="library-quarantine">--</dd></div>
               </dl>
               <form class="admin-form" id="library-form" autocomplete="off">
+                <div class="input">
+                  <label class="input__label" for="library-music-select">Speicherort auswählen</label>
+                  <div class="input-group">
+                    <select id="library-music-select"></select>
+                    <button class="button button--ghost" type="button" id="library-rescan">
+                      Speicher scannen
+                    </button>
+                  </div>
+                </div>
                 <label class="input">
                   <span class="input__label">Musikpfad</span>
-                  <input type="text" id="library-music-path" name="music_path" />
+                  <input
+                    type="text"
+                    id="library-music-path"
+                    name="music_path"
+                    placeholder="z. B. /media/ssd/auto-dj"
+                  />
+                  <small class="input__hint"
+                    >Unterstützt interne Laufwerke, externe SSDs oder synchronisierte Cloud-Ordner.</small
+                  >
                 </label>
                 <label class="input">
                   <span class="input__label">DATABASE_URL</span>

@@ -42,8 +42,10 @@ const mixerTimeStretch = document.getElementById("mixer-time-stretch");
 const libraryForm = document.getElementById("library-form");
 const libraryTrackCount = document.getElementById("library-track-count");
 const libraryQuarantine = document.getElementById("library-quarantine");
+const libraryMusicSelect = document.getElementById("library-music-select");
 const libraryMusicPath = document.getElementById("library-music-path");
 const libraryDatabaseDsn = document.getElementById("library-database-dsn");
+const libraryRescanButton = document.getElementById("library-rescan");
 
 const lightForm = document.getElementById("light-form");
 const lightHost = document.getElementById("light-host");
@@ -466,9 +468,75 @@ async function fetchLibrarySettings() {
     if (libraryQuarantine) libraryQuarantine.textContent = data.quarantine_path;
     if (libraryMusicPath) libraryMusicPath.value = data.music_path;
     if (libraryDatabaseDsn) libraryDatabaseDsn.value = data.database_dsn;
+    await refreshMusicLocations(data.music_path);
   } catch (error) {
     showToast(error.message || "Unbekannter Fehler", "error");
   }
+}
+
+function syncLibrarySelectWithInput() {
+  if (!libraryMusicSelect || !libraryMusicPath) {
+    return;
+  }
+  const value = libraryMusicPath.value.trim();
+  const matchingOption = Array.from(libraryMusicSelect.options).find(
+    (option) => option.value === value && option.value !== "__custom__"
+  );
+  if (matchingOption) {
+    libraryMusicSelect.value = matchingOption.value;
+  } else {
+    libraryMusicSelect.value = "__custom__";
+  }
+}
+
+async function refreshMusicLocations(currentPath) {
+  if (!libraryMusicSelect) {
+    return false;
+  }
+  const desiredPath = typeof currentPath === "string" && currentPath.length
+    ? currentPath.trim()
+    : (libraryMusicPath?.value || "").trim();
+  try {
+    const response = await apiFetch("/admin/library/locations");
+    if (!response.ok) {
+      throw new Error("Speicherorte konnten nicht geladen werden");
+    }
+    const locations = await response.json();
+    libraryMusicSelect.innerHTML = "";
+    let matched = false;
+    locations.forEach((location) => {
+      const option = document.createElement("option");
+      option.value = location.path;
+      option.dataset.kind = location.kind;
+      option.textContent = `${location.label} — ${location.path}${
+        location.available ? "" : " (nicht gefunden)"
+      }`;
+      if (desiredPath && location.path === desiredPath) {
+        option.selected = true;
+        matched = true;
+      }
+      libraryMusicSelect.appendChild(option);
+    });
+    const customOption = document.createElement("option");
+    customOption.value = "__custom__";
+    customOption.textContent = "Eigener Pfad …";
+    if (!matched) {
+      customOption.selected = true;
+    }
+    libraryMusicSelect.appendChild(customOption);
+    if (libraryMusicPath) {
+      if (desiredPath) {
+        libraryMusicPath.value = desiredPath;
+      } else if (matched && libraryMusicSelect.value !== "__custom__") {
+        libraryMusicPath.value = libraryMusicSelect.value;
+      }
+      syncLibrarySelectWithInput();
+    }
+  } catch (error) {
+    showToast(error.message || "Speicherorte konnten nicht geladen werden", "error");
+    return false;
+  }
+  return true;
 }
 
 async function fetchLightSettings() {
@@ -710,11 +778,47 @@ if (mixerForm) {
   });
 }
 
+if (libraryMusicSelect) {
+  libraryMusicSelect.addEventListener("change", () => {
+    if (!libraryMusicPath) {
+      return;
+    }
+    if (libraryMusicSelect.value === "__custom__") {
+      libraryMusicPath.focus();
+    } else {
+      libraryMusicPath.value = libraryMusicSelect.value;
+    }
+  });
+}
+
+if (libraryMusicPath) {
+  libraryMusicPath.addEventListener("input", () => {
+    syncLibrarySelectWithInput();
+  });
+}
+
+if (libraryRescanButton) {
+  libraryRescanButton.addEventListener("click", async () => {
+    const success = await refreshMusicLocations(libraryMusicPath?.value || "");
+    if (success) {
+      showToast("Speicherorte aktualisiert", "success");
+    }
+  });
+}
+
 if (libraryForm) {
   libraryForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const formData = new FormData(libraryForm);
-    const payload = Object.fromEntries(formData.entries());
+    const payload = {};
+    const musicPathValue = (formData.get("music_path") || "").toString().trim();
+    const databaseDsnValue = (formData.get("database_dsn") || "").toString().trim();
+    if (musicPathValue) {
+      payload.music_path = musicPathValue;
+    }
+    if (databaseDsnValue) {
+      payload.database_dsn = databaseDsnValue;
+    }
     try {
       const response = await apiFetch("/admin/library/settings", {
         method: "POST",
@@ -730,6 +834,9 @@ if (libraryForm) {
       const data = await response.json();
       if (libraryTrackCount) libraryTrackCount.textContent = data.track_count;
       if (libraryQuarantine) libraryQuarantine.textContent = data.quarantine_path;
+      if (libraryMusicPath) libraryMusicPath.value = data.music_path;
+      if (libraryDatabaseDsn) libraryDatabaseDsn.value = data.database_dsn;
+      await refreshMusicLocations(data.music_path);
       showToast("Bibliothek aktualisiert", "success");
     } catch (error) {
       showToast(error.message || "Unbekannter Fehler", "error");
