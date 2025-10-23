@@ -30,6 +30,13 @@ const audioScanButton = document.getElementById("audio-scan");
 const audioForm = document.getElementById("audio-output-form");
 const audioDeviceSelect = document.getElementById("audio-device-select");
 
+const bluetoothScanButton = document.getElementById("bluetooth-scan");
+const bluetoothRefreshButton = document.getElementById("bluetooth-refresh");
+const bluetoothPairForm = document.getElementById("bluetooth-pair-form");
+const bluetoothAddressInput = document.getElementById("bluetooth-address");
+const bluetoothSetDefault = document.getElementById("bluetooth-set-default");
+const bluetoothDeviceList = document.getElementById("bluetooth-devices");
+
 const mixerForm = document.getElementById("mixer-form");
 const mixerCrossfade = document.getElementById("mixer-crossfade");
 const mixerVolumeCurve = document.getElementById("mixer-volume-curve");
@@ -89,6 +96,8 @@ const diagnosticsPersistent = document.getElementById("diagnostics-persistent");
 const diagnosticsCache = document.getElementById("diagnostics-cache");
 const diagnosticsConfig = document.getElementById("diagnostics-config");
 const diagnosticsLastError = document.getElementById("diagnostics-last-error");
+const diagnosticsRunButton = document.getElementById("diagnostics-run");
+const diagnosticsResults = document.getElementById("diagnostics-results");
 
 let systemInterval = null;
 let togglesUpdating = false;
@@ -602,6 +611,125 @@ async function fetchAudioOutput(showToastMessage = false) {
     }
   } catch (error) {
     showToast(error.message || "Unbekannter Fehler", "error");
+  }
+}
+
+function renderBluetoothDevices(devices) {
+  if (!bluetoothDeviceList) {
+    return;
+  }
+  bluetoothDeviceList.innerHTML = "";
+  if (!Array.isArray(devices) || !devices.length) {
+    const empty = document.createElement("p");
+    empty.className = "admin-empty";
+    empty.textContent = "Noch keine Geräte gefunden.";
+    bluetoothDeviceList.appendChild(empty);
+    return;
+  }
+
+  devices.forEach((device) => {
+    const item = document.createElement("div");
+    item.className = "bluetooth-device";
+    item.dataset.address = device.address;
+
+    const meta = document.createElement("div");
+    meta.className = "bluetooth-device__meta";
+
+    const name = document.createElement("div");
+    name.className = "bluetooth-device__name";
+    name.textContent = device.name || device.address;
+    meta.appendChild(name);
+
+    const status = document.createElement("div");
+    status.className = "bluetooth-device__status";
+    const addressSpan = document.createElement("span");
+    addressSpan.textContent = device.address;
+    const statusSpan = document.createElement("span");
+    const statusParts = [device.connected ? "Verbunden" : "Getrennt"];
+    if (device.paired) statusParts.push("Gekoppelt");
+    if (device.trusted) statusParts.push("Vertraut");
+    statusSpan.textContent = statusParts.join(" · ") || "Unbekannter Status";
+    status.append(addressSpan, statusSpan);
+    meta.appendChild(status);
+
+    const actions = document.createElement("div");
+    actions.className = "bluetooth-device__actions";
+
+    if (device.connected) {
+      const disconnect = document.createElement("button");
+      disconnect.type = "button";
+      disconnect.className = "button button--ghost";
+      disconnect.dataset.action = "disconnect";
+      disconnect.dataset.address = device.address;
+      disconnect.textContent = "Trennen";
+      actions.appendChild(disconnect);
+
+      const setOutput = document.createElement("button");
+      setOutput.type = "button";
+      setOutput.className = "button";
+      setOutput.dataset.action = "connect-default";
+      setOutput.dataset.address = device.address;
+      setOutput.textContent = "Als Ausgabe setzen";
+      actions.appendChild(setOutput);
+    } else {
+      const connect = document.createElement("button");
+      connect.type = "button";
+      connect.className = "button button--ghost";
+      connect.dataset.action = "connect";
+      connect.dataset.address = device.address;
+      connect.textContent = "Verbinden";
+      actions.appendChild(connect);
+
+      const connectDefault = document.createElement("button");
+      connectDefault.type = "button";
+      connectDefault.className = "button";
+      connectDefault.dataset.action = "connect-default";
+      connectDefault.dataset.address = device.address;
+      connectDefault.textContent = "Verbinden & Ausgabe";
+      actions.appendChild(connectDefault);
+    }
+
+    item.append(meta, actions);
+    bluetoothDeviceList.appendChild(item);
+  });
+}
+
+async function fetchBluetoothDevices(showToastMessage = false) {
+  if (!bluetoothDeviceList) {
+    return;
+  }
+  try {
+    const response = await apiFetch("/admin/audio/bluetooth");
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.detail || "Bluetooth-Geräte konnten nicht geladen werden");
+    }
+    const data = await response.json();
+    renderBluetoothDevices(data.devices || []);
+    if (showToastMessage) {
+      showToast("Bluetooth-Liste aktualisiert", "success");
+    }
+  } catch (error) {
+    renderBluetoothDevices([]);
+    showToast(error.message || "Bluetooth-Geräte konnten nicht geladen werden", "error");
+  }
+}
+
+async function scanBluetoothDevices() {
+  if (!bluetoothDeviceList) {
+    return;
+  }
+  try {
+    const response = await apiFetch("/admin/audio/bluetooth/scan", { method: "POST" });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.detail || "Scan fehlgeschlagen");
+    }
+    const data = await response.json();
+    renderBluetoothDevices(data.devices || []);
+    showToast("Bluetooth-Scan abgeschlossen", "success");
+  } catch (error) {
+    showToast(error.message || "Scan fehlgeschlagen", "error");
   }
 }
 
@@ -1189,11 +1317,41 @@ async function fetchDiagnostics() {
   }
 }
 
+function renderDiagnosticsResults(results) {
+  if (!diagnosticsResults) {
+    return;
+  }
+  diagnosticsResults.innerHTML = "";
+  if (!Array.isArray(results) || !results.length) {
+    const empty = document.createElement("p");
+    empty.className = "admin-empty";
+    empty.textContent = "Noch keine Ergebnisse.";
+    diagnosticsResults.appendChild(empty);
+    return;
+  }
+
+  results.forEach((entry) => {
+    const item = document.createElement("div");
+    item.className = "diagnostics-result";
+    item.dataset.success = entry.success ? "true" : "false";
+
+    const title = document.createElement("span");
+    title.textContent = entry.name || "Check";
+
+    const detail = document.createElement("span");
+    detail.textContent = entry.detail || "";
+
+    item.append(title, detail);
+    diagnosticsResults.appendChild(item);
+  });
+}
+
 async function loadControlCenter() {
   await Promise.all([
     fetchSystemOverview(),
     fetchAccounts(),
     fetchAudioOutput(),
+    fetchBluetoothDevices(),
     fetchMixerSettings(),
     fetchLibrarySettings(),
     refreshPlaylists(),
@@ -1335,6 +1493,132 @@ if (audioForm && audioDeviceSelect) {
       showToast("Audio-Gerät aktualisiert", "success");
     } catch (error) {
       showToast(error.message || "Unbekannter Fehler", "error");
+    }
+  });
+}
+
+if (bluetoothRefreshButton) {
+  bluetoothRefreshButton.addEventListener("click", () => {
+    fetchBluetoothDevices(true);
+  });
+}
+
+if (bluetoothScanButton) {
+  bluetoothScanButton.addEventListener("click", async () => {
+    const original = bluetoothScanButton.textContent;
+    bluetoothScanButton.disabled = true;
+    bluetoothScanButton.textContent = "Suche…";
+    try {
+      await scanBluetoothDevices();
+    } finally {
+      bluetoothScanButton.disabled = false;
+      bluetoothScanButton.textContent = original;
+    }
+  });
+}
+
+if (bluetoothPairForm) {
+  bluetoothPairForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const address = (bluetoothAddressInput?.value || "").trim();
+    if (!address) {
+      showToast("Bitte eine Bluetooth-Adresse eingeben", "error");
+      return;
+    }
+    const payload = {
+      address,
+      set_default: bluetoothSetDefault ? bluetoothSetDefault.checked : true,
+    };
+    try {
+      const response = await apiFetch("/admin/audio/bluetooth/pair", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || "Bluetooth-Gerät konnte nicht gekoppelt werden");
+      }
+      showToast(data.message || "Bluetooth-Gerät verbunden", "success");
+      if (bluetoothAddressInput) {
+        bluetoothAddressInput.value = "";
+      }
+      await fetchBluetoothDevices();
+      if (payload.set_default && data.audio_device_id) {
+        await fetchAudioOutput();
+      }
+    } catch (error) {
+      showToast(error.message || "Bluetooth-Gerät konnte nicht gekoppelt werden", "error");
+    }
+  });
+}
+
+if (bluetoothDeviceList) {
+  bluetoothDeviceList.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLButtonElement)) {
+      return;
+    }
+    const { address, action } = target.dataset;
+    if (!address || !action) {
+      return;
+    }
+    const payload = {
+      address,
+      connect: action !== "disconnect",
+      set_default: action === "connect-default",
+    };
+    target.disabled = true;
+    try {
+      const response = await apiFetch("/admin/audio/bluetooth/connect", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || "Bluetooth-Aktion fehlgeschlagen");
+      }
+      await fetchBluetoothDevices();
+      if (payload.set_default && data.audio_device_id) {
+        await fetchAudioOutput();
+      }
+      const variant = payload.connect ? "success" : "info";
+      showToast(data.message || "Bluetooth-Aktion abgeschlossen", variant);
+    } catch (error) {
+      showToast(error.message || "Bluetooth-Aktion fehlgeschlagen", "error");
+    } finally {
+      target.disabled = false;
+    }
+  });
+}
+
+if (diagnosticsRunButton) {
+  diagnosticsRunButton.addEventListener("click", async () => {
+    const original = diagnosticsRunButton.textContent;
+    diagnosticsRunButton.disabled = true;
+    diagnosticsRunButton.textContent = "System-Check läuft…";
+    try {
+      const response = await apiFetch("/admin/diagnostics/run", { method: "POST" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || "System-Check fehlgeschlagen");
+      }
+      renderDiagnosticsResults(data.results || []);
+      if (Number(data.exit_code) === 0) {
+        showToast("System-Check erfolgreich abgeschlossen", "success");
+      } else {
+        showToast("System-Check meldet Fehler", "error");
+      }
+    } catch (error) {
+      showToast(error.message || "System-Check fehlgeschlagen", "error");
+    } finally {
+      diagnosticsRunButton.disabled = false;
+      diagnosticsRunButton.textContent = original;
     }
   });
 }

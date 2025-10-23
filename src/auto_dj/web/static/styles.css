@@ -649,6 +649,70 @@ body {
   gap: 1rem;
 }
 
+.panel-card__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.bluetooth-devices {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.bluetooth-device {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.bluetooth-device__meta {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.bluetooth-device__name {
+  font-weight: 600;
+}
+
+.bluetooth-device__status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.bluetooth-device__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.diagnostics-results {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.diagnostics-result {
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.05);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.diagnostics-result[data-success="false"] {
+  background: rgba(255, 94, 94, 0.15);
+  color: #ffdede;
+}
+
 .system-stats {
   display: grid;
   gap: 0.65rem;

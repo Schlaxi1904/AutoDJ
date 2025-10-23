@@ -123,6 +123,30 @@
               </form>
             </article>
 
+            <article class="panel-card" aria-labelledby="bluetooth-title">
+              <header class="panel-card__header">
+                <h3 id="bluetooth-title">Bluetooth-Ausgabe</h3>
+                <div class="panel-card__actions">
+                  <button class="button button--ghost" id="bluetooth-refresh" type="button">Aktualisieren</button>
+                  <button class="button button--ghost" id="bluetooth-scan" type="button">Nach Geräten suchen</button>
+                </div>
+              </header>
+              <form class="admin-form" id="bluetooth-pair-form">
+                <label class="input">
+                  <span class="input__label">Geräteadresse (MAC)</span>
+                  <input type="text" id="bluetooth-address" name="address" placeholder="AA:BB:CC:DD:EE:FF" autocomplete="off" />
+                </label>
+                <label class="toggle">
+                  <input type="checkbox" id="bluetooth-set-default" name="set_default" checked />
+                  <span>Nach dem Koppeln als Ausgabegerät setzen</span>
+                </label>
+                <button class="button" type="submit">Koppeln &amp; Verbinden</button>
+              </form>
+              <div class="bluetooth-devices" id="bluetooth-devices" role="list">
+                <p class="admin-empty">Noch keine Geräte gefunden.</p>
+              </div>
+            </article>
+
             <article class="panel-card" aria-labelledby="mixer-settings-title">
               <header class="panel-card__header">
                 <h3 id="mixer-settings-title">Mixer-Einstellungen</h3>
@@ -402,6 +426,7 @@
             <article class="panel-card" aria-labelledby="diagnostics-title">
               <header class="panel-card__header">
                 <h3 id="diagnostics-title">Protokolle &amp; Diagnose</h3>
+                <button class="button button--ghost" id="diagnostics-run" type="button">System-Check starten</button>
               </header>
               <dl class="system-stats">
                 <div><dt>Runtime-Logs</dt><dd id="diagnostics-runtime">--</dd></div>
@@ -410,6 +435,7 @@
                 <div><dt>Konfiguration</dt><dd id="diagnostics-config">--</dd></div>
                 <div><dt>Letzter Fehler</dt><dd id="diagnostics-last-error">Keine Einträge</dd></div>
               </dl>
+              <div class="diagnostics-results" id="diagnostics-results" role="status" aria-live="polite"></div>
             </article>
 
             <article class="panel-card" aria-labelledby="accounts-title">

@@ -3,14 +3,16 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+import re
+import unicodedata
+from typing import Callable, Dict, List, Optional, Tuple
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 
 from ..audio.analyzer import summarize_music_directory
 from ..config import AutoDjConfig, load_config
@@ -18,11 +20,13 @@ from ..database.models import AdminUser, QueueEntry, Track
 from ..database.session import Database
 from ..services.admin import AdminService
 from ..services.audio_devices import AudioDeviceScanner
+from ..services.bluetooth import BluetoothDevice, BluetoothError, BluetoothManager
 from ..services.playlists import PlaylistDetail, PlaylistService, PlaylistSummary
 from ..services.queue import QueueManager
 from ..services.osc import OscService
 from ..services.settings import SettingsService
 from ..services.system import SystemMonitor
+from ..tools.diagnostics import DiagnosticResult as DiagnosticResultModel, run_diagnostics
 from .security import SessionManager
 
 app = FastAPI(title="Auto-DJ")
@@ -103,8 +107,22 @@ def get_audio_device_scanner() -> AudioDeviceScanner:
     return AudioDeviceScanner()
 
 
+def get_bluetooth_manager() -> BluetoothManager:
+    return BluetoothManager()
+
+
 def get_osc_service(config: AutoDjConfig = Depends(get_config)) -> OscService:
     return OscService(config.osc)
+
+
+def get_diagnostics_runner() -> Callable[[], Tuple[int, List[DiagnosticResultModel]]]:
+    return run_diagnostics
+
+
+def _normalize_text(value: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", value or "")
+    stripped = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return stripped.casefold()
 
 
 def _merge_system_toggles(settings: SettingsService, config: AutoDjConfig) -> SystemToggleState:
@@ -120,6 +138,36 @@ def _merge_system_toggles(settings: SettingsService, config: AutoDjConfig) -> Sy
         superscenes_enabled=bool(merged.get("superscenes_enabled", False)),
         public_enabled=bool(merged.get("public_enabled", default["public_enabled"])),
     )
+
+
+def _bluetooth_device_to_out(device: BluetoothDevice) -> BluetoothDeviceOut:
+    return BluetoothDeviceOut(
+        address=device.address,
+        name=device.name,
+        paired=device.paired,
+        trusted=device.trusted,
+        connected=device.connected,
+    )
+
+
+def _find_matching_audio_device(
+    scanner: AudioDeviceScanner, address: str, name: str
+) -> Optional[str]:
+    normalized_address = re.sub(r"[^0-9a-f]", "", address.casefold())
+    normalized_name = _normalize_text(name)
+    best_match: Optional[str] = None
+    for candidate in scanner.scan():
+        haystack_identifier = re.sub(
+            r"[^0-9a-f]", "", candidate.identifier.casefold()
+        )
+        haystack_label = _normalize_text(candidate.label)
+        if normalized_address and normalized_address in haystack_identifier:
+            return candidate.identifier
+        if normalized_name and normalized_name in haystack_label:
+            if candidate.kind == "bluetooth":
+                return candidate.identifier
+            best_match = candidate.identifier
+    return best_match
 
 
 def _sanitize_scene_bindings(raw: Dict[str, Dict[str, object]]) -> Dict[str, Dict[str, int]]:
@@ -519,6 +567,35 @@ class AudioOutputUpdate(BaseModel):
     device_id: str
 
 
+class BluetoothDeviceOut(BaseModel):
+    address: str
+    name: str
+    paired: bool
+    trusted: bool
+    connected: bool
+
+
+class BluetoothScanOut(BaseModel):
+    devices: List[BluetoothDeviceOut]
+
+
+class BluetoothPairRequest(BaseModel):
+    address: str
+    set_default: bool = True
+
+
+class BluetoothConnectRequest(BaseModel):
+    address: str
+    connect: bool = True
+    set_default: bool = False
+
+
+class BluetoothActionOut(BaseModel):
+    device: BluetoothDeviceOut
+    audio_device_id: Optional[str] = None
+    message: str
+
+
 class MixerSettingsOut(BaseModel):
     crossfade_seconds: float = Field(ge=0)
     volume_curve: str
@@ -646,6 +723,17 @@ class DiagnosticsOut(BaseModel):
     last_error: Optional[str]
 
 
+class DiagnosticResultOut(BaseModel):
+    name: str
+    success: bool
+    detail: str
+
+
+class DiagnosticRunOut(BaseModel):
+    exit_code: int
+    results: List[DiagnosticResultOut]
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(
     request: Request,
@@ -727,19 +815,40 @@ class TrackSearchOut(BaseModel):
 @app.get("/tracks/search", response_model=List[TrackSearchOut])
 async def search_tracks(
     query: str = Query(..., min_length=2, description="Artist or title search"),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(5, ge=1, le=5),
     db: Database = Depends(get_database),
 ) -> List[TrackSearchOut]:
-    like_pattern = f"%{query}%"
+    normalized_query = re.sub(r"\s+", " ", query).strip()
+    if not normalized_query:
+        return []
+
+    tokens = [token for token in normalized_query.split(" ") if token]
+    if not tokens:
+        return []
+
+    normalized_tokens = [_normalize_text(token) for token in tokens]
+    filters = [
+        or_(Track.title.ilike(f"%{token}%"), Track.artist.ilike(f"%{token}%"))
+        for token in tokens
+    ]
+
     with db.session() as session:
         stmt = (
             select(Track)
-            .where(or_(Track.title.ilike(like_pattern), Track.artist.ilike(like_pattern)))
+            .where(and_(*filters))
             .order_by(Track.artist.asc(), Track.title.asc())
-            .limit(limit)
+            .limit(max(25, limit * 5))
         )
-        results = session.execute(stmt).scalars().all()
-        return list(results)
+        candidates = session.execute(stmt).scalars().all()
+
+    results: List[Track] = []
+    for track in candidates:
+        haystack = _normalize_text(f"{track.artist} {track.title}")
+        if all(token in haystack for token in normalized_tokens):
+            results.append(track)
+        if len(results) >= limit:
+            break
+    return results
 
 
 @app.post("/admin/login")
@@ -907,6 +1016,104 @@ async def admin_update_audio_output(
     settings.set(_AUDIO_OUTPUT_KEY, {"device_id": payload.device_id})
     devices = [AudioDeviceOut(**device.__dict__) for device in scanner.scan()]
     return AudioOutputStateOut(active_device_id=payload.device_id, devices=devices)
+
+
+@app.get("/admin/audio/bluetooth", response_model=BluetoothScanOut)
+async def admin_list_bluetooth_devices(
+    manager: BluetoothManager = Depends(get_bluetooth_manager),
+    _: AdminUser = Depends(require_admin),
+) -> BluetoothScanOut:
+    try:
+        devices = manager.list_devices()
+    except BluetoothError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    return BluetoothScanOut(devices=[_bluetooth_device_to_out(device) for device in devices])
+
+
+@app.post("/admin/audio/bluetooth/scan", response_model=BluetoothScanOut)
+async def admin_scan_bluetooth_devices(
+    manager: BluetoothManager = Depends(get_bluetooth_manager),
+    _: AdminUser = Depends(require_admin),
+) -> BluetoothScanOut:
+    try:
+        devices = manager.scan()
+    except BluetoothError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    return BluetoothScanOut(devices=[_bluetooth_device_to_out(device) for device in devices])
+
+
+@app.post("/admin/audio/bluetooth/pair", response_model=BluetoothActionOut)
+async def admin_pair_bluetooth_device(
+    payload: BluetoothPairRequest,
+    manager: BluetoothManager = Depends(get_bluetooth_manager),
+    scanner: AudioDeviceScanner = Depends(get_audio_device_scanner),
+    settings: SettingsService = Depends(get_settings_service),
+    _: AdminUser = Depends(require_admin),
+) -> BluetoothActionOut:
+    try:
+        device = manager.pair_device(payload.address)
+    except BluetoothError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audio_device_id: Optional[str] = None
+    if payload.set_default:
+        audio_device_id = _find_matching_audio_device(scanner, device.address, device.name)
+        if audio_device_id:
+            settings.set(_AUDIO_OUTPUT_KEY, {"device_id": audio_device_id})
+
+    message = "Bluetooth-Gerät verbunden"
+    if payload.set_default and not audio_device_id:
+        message = (
+            "Gerät gekoppelt – bitte gewünschtes Ausgabegerät manuell auswählen"
+        )
+
+    return BluetoothActionOut(
+        device=_bluetooth_device_to_out(device),
+        audio_device_id=audio_device_id,
+        message=message,
+    )
+
+
+@app.post("/admin/audio/bluetooth/connect", response_model=BluetoothActionOut)
+async def admin_connect_bluetooth_device(
+    payload: BluetoothConnectRequest,
+    manager: BluetoothManager = Depends(get_bluetooth_manager),
+    scanner: AudioDeviceScanner = Depends(get_audio_device_scanner),
+    settings: SettingsService = Depends(get_settings_service),
+    _: AdminUser = Depends(require_admin),
+) -> BluetoothActionOut:
+    try:
+        if payload.connect:
+            device = manager.connect_device(payload.address)
+        else:
+            device = manager.disconnect_device(payload.address)
+    except BluetoothError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audio_device_id: Optional[str] = None
+    if payload.connect and payload.set_default:
+        audio_device_id = _find_matching_audio_device(scanner, device.address, device.name)
+        if audio_device_id:
+            settings.set(_AUDIO_OUTPUT_KEY, {"device_id": audio_device_id})
+
+    if payload.connect:
+        message = "Bluetooth-Gerät verbunden"
+        if payload.set_default and not audio_device_id:
+            message = "Verbunden – bitte Ausgabegerät auswählen"
+    else:
+        message = "Bluetooth-Gerät getrennt"
+
+    return BluetoothActionOut(
+        device=_bluetooth_device_to_out(device),
+        audio_device_id=audio_device_id,
+        message=message,
+    )
 
 
 @app.get("/admin/audio/mixer", response_model=MixerSettingsOut)
@@ -1184,6 +1391,23 @@ async def admin_diagnostics(
         cache_path=str(config.paths.cache_root),
         config_path=str(config.paths.config_root),
         last_error=last_error if isinstance(last_error, str) else None,
+    )
+
+
+@app.post("/admin/diagnostics/run", response_model=DiagnosticRunOut)
+async def admin_run_diagnostics(
+    runner: Callable[[], Tuple[int, List[DiagnosticResultModel]]] = Depends(
+        get_diagnostics_runner
+    ),
+    _: AdminUser = Depends(require_admin),
+) -> DiagnosticRunOut:
+    exit_code, results = runner()
+    return DiagnosticRunOut(
+        exit_code=exit_code,
+        results=[
+            DiagnosticResultOut(name=item.name, success=item.success, detail=item.detail)
+            for item in results
+        ],
     )
 
 
