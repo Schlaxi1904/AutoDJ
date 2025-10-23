@@ -18,6 +18,7 @@ from ..database.models import AdminUser, QueueEntry, Track
 from ..database.session import Database
 from ..services.admin import AdminService
 from ..services.audio_devices import AudioDeviceScanner
+from ..services.playlists import PlaylistDetail, PlaylistService, PlaylistSummary
 from ..services.queue import QueueManager
 from ..services.osc import OscService
 from ..services.settings import SettingsService
@@ -65,8 +66,16 @@ def get_database(config: AutoDjConfig = Depends(get_config)) -> Database:
     return Database(config.database)
 
 
-def get_queue_manager(db: Database = Depends(get_database), config: AutoDjConfig = Depends(get_config)) -> QueueManager:
-    return QueueManager(db, config.queue_policy)
+def get_playlist_service(db: Database = Depends(get_database)) -> PlaylistService:
+    return PlaylistService(db)
+
+
+def get_queue_manager(
+    db: Database = Depends(get_database),
+    config: AutoDjConfig = Depends(get_config),
+    playlists: PlaylistService = Depends(get_playlist_service),
+) -> QueueManager:
+    return QueueManager(db, config.queue_policy, playlists)
 
 
 def get_admin_service(
@@ -359,6 +368,27 @@ def _discover_music_locations(
     return locations
 
 
+def _playlist_summary_to_out(summary: PlaylistSummary) -> PlaylistSummaryOut:
+    return PlaylistSummaryOut(
+        id=summary.id,
+        name=summary.name,
+        description=summary.description,
+        track_count=summary.track_count,
+        is_fallback=summary.is_fallback,
+    )
+
+
+def _playlist_detail_to_out(detail: PlaylistDetail) -> PlaylistDetailOut:
+    return PlaylistDetailOut(
+        id=detail.id,
+        name=detail.name,
+        description=detail.description,
+        track_count=detail.track_count,
+        is_fallback=detail.is_fallback,
+        tracks=list(detail.tracks),
+    )
+
+
 def require_admin(
     request: Request,
     admin_service: AdminService = Depends(get_admin_service),
@@ -528,6 +558,40 @@ class MusicLocationOut(BaseModel):
     label: str
     kind: str
     available: bool
+
+
+class PlaylistSummaryOut(BaseModel):
+    id: int
+    name: str
+    description: Optional[str]
+    track_count: int
+    is_fallback: bool
+
+
+class PlaylistDetailOut(PlaylistSummaryOut):
+    tracks: List[TrackOut]
+
+
+class PlaylistCreateRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class PlaylistUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+
+class PlaylistTrackAddRequest(BaseModel):
+    track_id: int
+
+
+class PlaylistFallbackUpdate(BaseModel):
+    playlist_id: Optional[int] = Field(default=None, ge=1)
+
+
+class PlaylistFallbackOut(BaseModel):
+    playlist_id: Optional[int]
 
 
 class LightGenreBindingOut(BaseModel):
@@ -896,6 +960,119 @@ async def admin_update_library_settings(
     if updates:
         settings.update_dict(_LIBRARY_SETTINGS_KEY, updates)
     return _library_state(db, settings, config)
+
+
+@app.get("/admin/playlists", response_model=List[PlaylistSummaryOut])
+async def admin_list_playlists(
+    playlists: PlaylistService = Depends(get_playlist_service),
+    _: AdminUser = Depends(require_admin),
+) -> List[PlaylistSummaryOut]:
+    summaries = playlists.list_playlists()
+    return [_playlist_summary_to_out(summary) for summary in summaries]
+
+
+@app.post("/admin/playlists", response_model=PlaylistDetailOut, status_code=status.HTTP_201_CREATED)
+async def admin_create_playlist(
+    payload: PlaylistCreateRequest,
+    playlists: PlaylistService = Depends(get_playlist_service),
+    _: AdminUser = Depends(require_admin),
+) -> PlaylistDetailOut:
+    try:
+        detail = playlists.create_playlist(payload.name, payload.description)
+    except ValueError as exc:  # pragma: no cover - simple validation branch
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return _playlist_detail_to_out(detail)
+
+
+@app.get("/admin/playlists/{playlist_id}", response_model=PlaylistDetailOut)
+async def admin_get_playlist(
+    playlist_id: int,
+    playlists: PlaylistService = Depends(get_playlist_service),
+    _: AdminUser = Depends(require_admin),
+) -> PlaylistDetailOut:
+    try:
+        detail = playlists.get_playlist(playlist_id)
+    except ValueError as exc:  # pragma: no cover - simple validation branch
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return _playlist_detail_to_out(detail)
+
+
+@app.patch("/admin/playlists/{playlist_id}", response_model=PlaylistDetailOut)
+async def admin_update_playlist(
+    playlist_id: int,
+    payload: PlaylistUpdateRequest,
+    playlists: PlaylistService = Depends(get_playlist_service),
+    _: AdminUser = Depends(require_admin),
+) -> PlaylistDetailOut:
+    try:
+        detail = playlists.update_playlist(
+            playlist_id, name=payload.name, description=payload.description
+        )
+    except ValueError as exc:  # pragma: no cover - simple validation branch
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return _playlist_detail_to_out(detail)
+
+
+@app.delete("/admin/playlists/{playlist_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_delete_playlist(
+    playlist_id: int,
+    playlists: PlaylistService = Depends(get_playlist_service),
+    _: AdminUser = Depends(require_admin),
+) -> Response:
+    try:
+        playlists.delete_playlist(playlist_id)
+    except ValueError as exc:  # pragma: no cover - simple validation branch
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/admin/playlists/{playlist_id}/tracks", response_model=PlaylistDetailOut)
+async def admin_add_playlist_track(
+    playlist_id: int,
+    payload: PlaylistTrackAddRequest,
+    playlists: PlaylistService = Depends(get_playlist_service),
+    _: AdminUser = Depends(require_admin),
+) -> PlaylistDetailOut:
+    try:
+        detail = playlists.add_track(playlist_id, payload.track_id)
+    except ValueError as exc:  # pragma: no cover - simple validation branch
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return _playlist_detail_to_out(detail)
+
+
+@app.delete("/admin/playlists/{playlist_id}/tracks/{track_id}", response_model=PlaylistDetailOut)
+async def admin_remove_playlist_track(
+    playlist_id: int,
+    track_id: int,
+    playlists: PlaylistService = Depends(get_playlist_service),
+    _: AdminUser = Depends(require_admin),
+) -> PlaylistDetailOut:
+    try:
+        detail = playlists.remove_track(playlist_id, track_id)
+    except ValueError as exc:  # pragma: no cover - simple validation branch
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return _playlist_detail_to_out(detail)
+
+
+@app.post("/admin/playlists/fallback", response_model=PlaylistFallbackOut)
+async def admin_set_fallback_playlist(
+    payload: PlaylistFallbackUpdate,
+    playlists: PlaylistService = Depends(get_playlist_service),
+    _: AdminUser = Depends(require_admin),
+) -> PlaylistFallbackOut:
+    try:
+        playlist_id = playlists.set_fallback_playlist(payload.playlist_id)
+    except ValueError as exc:  # pragma: no cover - simple validation branch
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return PlaylistFallbackOut(playlist_id=playlist_id)
+
+
+@app.get("/admin/playlists/fallback", response_model=PlaylistFallbackOut)
+async def admin_get_fallback_playlist(
+    playlists: PlaylistService = Depends(get_playlist_service),
+    _: AdminUser = Depends(require_admin),
+) -> PlaylistFallbackOut:
+    return PlaylistFallbackOut(playlist_id=playlists.get_fallback_playlist_id())
 
 
 @app.get("/admin/light/settings", response_model=LightSettingsOut)

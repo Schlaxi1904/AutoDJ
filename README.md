@@ -81,6 +81,9 @@ Nach erfolgreichem Login steht ein moduliertes Kontrollzentrum mit folgenden Ber
   * Hinweis: Der Begriff `DATABASE_URL` steht für die vollständige PostgreSQL-Verbindungs-
     zeichenkette im Format `postgresql://benutzer:passwort@host:5432/datenbank`. Darüber stellt der
     Auto-DJ die Verbindung zur Datenbank her.
+* **Autoplay-Playlisten** – Kuratiere Playlisten, füge Titel direkt aus der Bibliothek hinzu und
+  bestimme, welche Sammlung automatisch einspringt, sobald die Queue leer ist. Die Tracks werden
+  in Listenreihenfolge abgespielt und der Durchlauf nach Änderungen automatisch zurückgesetzt.
 * **Licht & Daslight 5** – Verwaltung der OSC-Zielparameter, Superscene- und Nebel-Toggles
   sowie ein Bar-Reset-Trigger für die Daslight-Synchronisation.
 * **Analyse & KI** – Feinjustierung der DJ-Brain-Gewichtungen (Key/BPM/Energie/Genre/Recency/

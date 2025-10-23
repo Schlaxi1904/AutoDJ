@@ -48,6 +48,26 @@ const libraryMusicSelect = document.getElementById("library-music-select");
 const libraryMusicPath = document.getElementById("library-music-path");
 const libraryDatabaseDsn = document.getElementById("library-database-dsn");
 const libraryRescanButton = document.getElementById("library-rescan");
+const playlistRefreshButton = document.getElementById("playlist-refresh");
+const playlistList = document.getElementById("playlist-list");
+const playlistCreateForm = document.getElementById("playlist-create-form");
+const playlistCreateName = document.getElementById("playlist-create-name");
+const playlistCreateDescription = document.getElementById("playlist-create-description");
+const playlistEmpty = document.getElementById("playlist-empty");
+const playlistDetailContent = document.getElementById("playlist-detail-content");
+const playlistDetailName = document.getElementById("playlist-detail-name");
+const playlistDetailDescription = document.getElementById("playlist-detail-description");
+const playlistDetailCount = document.getElementById("playlist-detail-count");
+const playlistDetailFallback = document.getElementById("playlist-detail-fallback");
+const playlistSetFallbackButton = document.getElementById("playlist-set-fallback");
+const playlistDeleteButton = document.getElementById("playlist-delete");
+const playlistEditForm = document.getElementById("playlist-edit-form");
+const playlistEditName = document.getElementById("playlist-edit-name");
+const playlistEditDescription = document.getElementById("playlist-edit-description");
+const playlistTrackSearchInput = document.getElementById("playlist-track-search");
+const playlistTrackSearchButton = document.getElementById("playlist-track-search-button");
+const playlistTrackResults = document.getElementById("playlist-track-results");
+const playlistTracksList = document.getElementById("playlist-tracks");
 
 const lightForm = document.getElementById("light-form");
 const lightHost = document.getElementById("light-host");
@@ -74,6 +94,9 @@ let systemInterval = null;
 let togglesUpdating = false;
 const LIGHT_DEFAULT_ACTION_ORDER = ["idle", "break", "build", "drop", "outro"];
 let lightActionLabels = {};
+let playlistSummaries = [];
+let currentPlaylistId = null;
+let playlistTrackSearchAbort = null;
 
 function escapeHtml(value) {
   return value.replace(/[&<>"']/g, (char) => {
@@ -92,6 +115,16 @@ function escapeHtml(value) {
         return char;
     }
   });
+}
+
+function formatDuration(durationMs) {
+  if (!Number.isFinite(durationMs)) {
+    return "--:--";
+  }
+  const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
 function showToast(message, variant = "info") {
@@ -686,6 +719,417 @@ async function refreshMusicLocations(currentPath) {
   return true;
 }
 
+function getFallbackPlaylistId() {
+  const fallback = playlistSummaries.find((item) => item.is_fallback);
+  return fallback ? fallback.id : null;
+}
+
+function resetPlaylistDetail() {
+  currentPlaylistId = null;
+  if (playlistDetailContent) playlistDetailContent.hidden = true;
+  if (playlistEmpty) playlistEmpty.hidden = false;
+  if (playlistDetailName) playlistDetailName.textContent = "Playlist";
+  if (playlistDetailDescription) playlistDetailDescription.textContent = "";
+  if (playlistDetailCount) playlistDetailCount.textContent = "0 Titel";
+  if (playlistDetailFallback) playlistDetailFallback.hidden = true;
+  if (playlistSetFallbackButton) {
+    playlistSetFallbackButton.disabled = true;
+    playlistSetFallbackButton.textContent = "Als Autoplay nutzen";
+  }
+  if (playlistDeleteButton) playlistDeleteButton.disabled = true;
+  if (playlistEditName) playlistEditName.value = "";
+  if (playlistEditDescription) playlistEditDescription.value = "";
+  if (playlistTrackResults) playlistTrackResults.innerHTML = "";
+  if (playlistTracksList) playlistTracksList.innerHTML = "";
+}
+
+function renderPlaylistList(summaries) {
+  if (!playlistList) {
+    return;
+  }
+  playlistList.innerHTML = "";
+  if (!summaries.length) {
+    const emptyItem = document.createElement("li");
+    emptyItem.className = "playlist-track__empty";
+    emptyItem.textContent = "Noch keine Playlisten angelegt.";
+    playlistList.appendChild(emptyItem);
+    resetPlaylistDetail();
+    return;
+  }
+
+  const fallbackId = getFallbackPlaylistId();
+  summaries.forEach((item) => {
+    const listItem = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "playlist-item";
+    button.dataset.id = String(item.id);
+    button.dataset.selected = item.id === currentPlaylistId ? "true" : "false";
+
+    const title = document.createElement("span");
+    title.className = "playlist-item__title";
+    title.textContent = item.name;
+
+    const meta = document.createElement("span");
+    meta.className = "playlist-item__meta";
+    const metaParts = [`${item.track_count} Tracks`];
+    if (fallbackId && item.id === fallbackId) {
+      metaParts.push("Autoplay");
+    }
+    meta.textContent = metaParts.join(" • ");
+
+    button.appendChild(title);
+    button.appendChild(meta);
+    button.addEventListener("click", () => {
+      loadPlaylistDetail(item.id, { scrollIntoView: true });
+    });
+
+    listItem.appendChild(button);
+    playlistList.appendChild(listItem);
+  });
+}
+
+function renderPlaylistTracks(tracks) {
+  if (!playlistTracksList) {
+    return;
+  }
+  playlistTracksList.innerHTML = "";
+  if (!tracks.length) {
+    const empty = document.createElement("li");
+    empty.className = "playlist-track playlist-track__empty";
+    empty.textContent = "Keine Tracks in dieser Playlist.";
+    playlistTracksList.appendChild(empty);
+    return;
+  }
+
+  tracks.forEach((track) => {
+    const item = document.createElement("li");
+    item.className = "playlist-track";
+    item.dataset.trackId = String(track.id);
+
+    const info = document.createElement("div");
+    info.className = "playlist-track__info";
+    const title = document.createElement("strong");
+    title.textContent = `${track.artist} – ${track.title}`;
+    const meta = document.createElement("span");
+    const parts = [];
+    if (Number.isFinite(track.duration_ms)) {
+      parts.push(formatDuration(track.duration_ms));
+    }
+    if (track.genre) {
+      parts.push(track.genre);
+    }
+    if (track.energy_avg != null) {
+      parts.push(`Energy ${track.energy_avg.toFixed(2)}`);
+    }
+    meta.textContent = parts.join(" • ");
+    info.appendChild(title);
+    if (parts.length) {
+      info.appendChild(meta);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "playlist-track__actions";
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.className = "button button--ghost";
+    removeButton.textContent = "Entfernen";
+    removeButton.addEventListener("click", () => {
+      if (currentPlaylistId != null) {
+        removeTrackFromPlaylist(currentPlaylistId, track.id);
+      }
+    });
+    actions.appendChild(removeButton);
+
+    item.appendChild(info);
+    item.appendChild(actions);
+    playlistTracksList.appendChild(item);
+  });
+}
+
+function renderPlaylistSearchResults(results) {
+  if (!playlistTrackResults) {
+    return;
+  }
+  playlistTrackResults.innerHTML = "";
+  if (!results.length) {
+    const empty = document.createElement("li");
+    empty.className = "playlist-track__empty";
+    empty.textContent = "Keine Treffer.";
+    playlistTrackResults.appendChild(empty);
+    return;
+  }
+
+  results.forEach((track) => {
+    const item = document.createElement("li");
+    item.className = "playlist-result";
+    const info = document.createElement("div");
+    info.className = "playlist-result__info";
+    const title = document.createElement("strong");
+    title.textContent = `${track.artist} – ${track.title}`;
+    const meta = document.createElement("span");
+    const parts = [];
+    if (Number.isFinite(track.duration_ms)) {
+      parts.push(formatDuration(track.duration_ms));
+    }
+    if (track.genre) {
+      parts.push(track.genre);
+    }
+    if (track.energy_avg != null) {
+      parts.push(`Energy ${track.energy_avg.toFixed(2)}`);
+    }
+    meta.textContent = parts.join(" • ");
+    info.appendChild(title);
+    if (parts.length) {
+      info.appendChild(meta);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "playlist-result__actions";
+    const addButton = document.createElement("button");
+    addButton.type = "button";
+    addButton.className = "button button--ghost";
+    addButton.textContent = "Hinzufügen";
+    addButton.addEventListener("click", () => {
+      if (currentPlaylistId != null) {
+        addTrackToPlaylist(currentPlaylistId, track.id);
+      }
+    });
+    actions.appendChild(addButton);
+
+    item.appendChild(info);
+    item.appendChild(actions);
+    playlistTrackResults.appendChild(item);
+  });
+}
+
+async function refreshPlaylists({ keepSelection = true } = {}) {
+  try {
+    const response = await apiFetch("/admin/playlists");
+    if (!response.ok) {
+      throw new Error("Playlisten konnten nicht geladen werden");
+    }
+    const data = await response.json();
+    playlistSummaries = Array.isArray(data) ? data : [];
+    if (keepSelection && currentPlaylistId != null) {
+      const stillExists = playlistSummaries.some((item) => item.id === currentPlaylistId);
+      if (!stillExists) {
+        resetPlaylistDetail();
+      }
+    }
+    renderPlaylistList(playlistSummaries);
+  } catch (error) {
+    showToast(error.message || "Playlisten konnten nicht geladen werden", "error");
+  }
+}
+
+function applyDetailToUi(detail) {
+  currentPlaylistId = detail.id;
+  if (playlistEmpty) playlistEmpty.hidden = true;
+  if (playlistDetailContent) playlistDetailContent.hidden = false;
+  if (playlistDetailName) playlistDetailName.textContent = detail.name;
+  if (playlistDetailDescription) {
+    playlistDetailDescription.textContent = detail.description || "Keine Beschreibung hinterlegt.";
+  }
+  if (playlistDetailCount) {
+    playlistDetailCount.textContent = `${detail.track_count} ${detail.track_count === 1 ? "Titel" : "Titel"}`;
+  }
+  if (playlistDetailFallback) {
+    playlistDetailFallback.hidden = !detail.is_fallback;
+  }
+  if (playlistSetFallbackButton) {
+    playlistSetFallbackButton.disabled = false;
+    playlistSetFallbackButton.textContent = detail.is_fallback
+      ? "Autoplay deaktivieren"
+      : "Als Autoplay nutzen";
+  }
+  if (playlistDeleteButton) playlistDeleteButton.disabled = false;
+  if (playlistEditName) playlistEditName.value = detail.name;
+  if (playlistEditDescription) playlistEditDescription.value = detail.description || "";
+  renderPlaylistTracks(detail.tracks || []);
+  renderPlaylistList(playlistSummaries);
+}
+
+function updateSummariesFromDetail(detail) {
+  const summary = {
+    id: detail.id,
+    name: detail.name,
+    description: detail.description,
+    track_count: detail.track_count,
+    is_fallback: detail.is_fallback,
+  };
+  const index = playlistSummaries.findIndex((item) => item.id === detail.id);
+  if (index >= 0) {
+    playlistSummaries[index] = summary;
+  } else {
+    playlistSummaries.push(summary);
+  }
+  if (detail.is_fallback) {
+    playlistSummaries = playlistSummaries.map((item) => ({
+      ...item,
+      is_fallback: item.id === detail.id,
+    }));
+  }
+}
+
+async function loadPlaylistDetail(playlistId, { scrollIntoView = false } = {}) {
+  try {
+    const response = await apiFetch(`/admin/playlists/${playlistId}`);
+    if (!response.ok) {
+      if (response.status === 404) {
+        await refreshPlaylists({ keepSelection: false });
+      }
+      throw new Error("Playlist konnte nicht geladen werden");
+    }
+    const detail = await response.json();
+    updateSummariesFromDetail(detail);
+    applyDetailToUi(detail);
+    if (scrollIntoView && playlistDetailContent) {
+      playlistDetailContent.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  } catch (error) {
+    showToast(error.message || "Playlist konnte nicht geladen werden", "error");
+  }
+}
+
+async function addTrackToPlaylist(playlistId, trackId) {
+  try {
+    const response = await apiFetch(`/admin/playlists/${playlistId}/tracks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ track_id: trackId }),
+    });
+    if (!response.ok) {
+      throw new Error("Track konnte nicht hinzugefügt werden");
+    }
+    const detail = await response.json();
+    updateSummariesFromDetail(detail);
+    applyDetailToUi(detail);
+    showToast("Track hinzugefügt", "success");
+  } catch (error) {
+    showToast(error.message || "Track konnte nicht hinzugefügt werden", "error");
+  }
+}
+
+async function removeTrackFromPlaylist(playlistId, trackId) {
+  try {
+    const response = await apiFetch(`/admin/playlists/${playlistId}/tracks/${trackId}`, {
+      method: "DELETE",
+    });
+    if (!response.ok) {
+      throw new Error("Track konnte nicht entfernt werden");
+    }
+    const detail = await response.json();
+    updateSummariesFromDetail(detail);
+    applyDetailToUi(detail);
+    showToast("Track entfernt", "success");
+  } catch (error) {
+    showToast(error.message || "Track konnte nicht entfernt werden", "error");
+  }
+}
+
+async function searchPlaylistTracks() {
+  if (!playlistTrackSearchInput) {
+    return;
+  }
+  if (currentPlaylistId == null) {
+    showToast("Bitte zuerst eine Playlist auswählen", "warning");
+    return;
+  }
+  const query = playlistTrackSearchInput.value.trim();
+  if (query.length < 2) {
+    showToast("Bitte mindestens zwei Zeichen eingeben", "warning");
+    return;
+  }
+  if (playlistTrackSearchAbort) {
+    playlistTrackSearchAbort.abort();
+  }
+  playlistTrackSearchAbort = new AbortController();
+  try {
+    const response = await apiFetch(`/tracks/search?query=${encodeURIComponent(query)}&limit=25`, {
+      signal: playlistTrackSearchAbort.signal,
+    });
+    if (!response.ok) {
+      throw new Error("Suche fehlgeschlagen");
+    }
+    const results = await response.json();
+    renderPlaylistSearchResults(Array.isArray(results) ? results : []);
+  } catch (error) {
+    if (error.name === "AbortError") {
+      return;
+    }
+    showToast(error.message || "Suche fehlgeschlagen", "error");
+  }
+}
+
+async function updatePlaylistMetadata(playlistId, payload) {
+  try {
+    const response = await apiFetch(`/admin/playlists/${playlistId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      throw new Error("Playlist konnte nicht aktualisiert werden");
+    }
+    const detail = await response.json();
+    updateSummariesFromDetail(detail);
+    applyDetailToUi(detail);
+    showToast("Playlist aktualisiert", "success");
+  } catch (error) {
+    showToast(error.message || "Playlist konnte nicht aktualisiert werden", "error");
+  }
+}
+
+async function deletePlaylist(playlistId) {
+  try {
+    const response = await apiFetch(`/admin/playlists/${playlistId}`, { method: "DELETE" });
+    if (!response.ok) {
+      throw new Error("Playlist konnte nicht gelöscht werden");
+    }
+    playlistSummaries = playlistSummaries.filter((item) => item.id !== playlistId);
+    renderPlaylistList(playlistSummaries);
+    resetPlaylistDetail();
+    showToast("Playlist gelöscht", "success");
+  } catch (error) {
+    showToast(error.message || "Playlist konnte nicht gelöscht werden", "error");
+  }
+}
+
+async function setFallbackPlaylist(playlistId) {
+  try {
+    const response = await apiFetch("/admin/playlists/fallback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ playlist_id: playlistId }),
+    });
+    if (!response.ok) {
+      throw new Error("Autoplay-Auswahl konnte nicht aktualisiert werden");
+    }
+    const data = await response.json();
+    const activeId = data.playlist_id ?? null;
+    playlistSummaries = playlistSummaries.map((item) => ({
+      ...item,
+      is_fallback: activeId != null && item.id === activeId,
+    }));
+    renderPlaylistList(playlistSummaries);
+    if (currentPlaylistId != null && currentPlaylistId === activeId) {
+      if (playlistDetailFallback) playlistDetailFallback.hidden = false;
+      if (playlistSetFallbackButton) {
+        playlistSetFallbackButton.textContent = "Autoplay deaktivieren";
+      }
+    } else if (currentPlaylistId != null) {
+      if (playlistDetailFallback) playlistDetailFallback.hidden = true;
+      if (playlistSetFallbackButton) {
+        playlistSetFallbackButton.textContent = "Als Autoplay nutzen";
+      }
+    }
+    showToast("Autoplay-Einstellung gespeichert", "success");
+  } catch (error) {
+    showToast(error.message || "Autoplay-Einstellung konnte nicht gespeichert werden", "error");
+  }
+}
+
 async function fetchLightSettings() {
   try {
     const response = await apiFetch("/admin/light/settings");
@@ -752,6 +1196,7 @@ async function loadControlCenter() {
     fetchAudioOutput(),
     fetchMixerSettings(),
     fetchLibrarySettings(),
+    refreshPlaylists(),
     fetchLightSettings(),
     fetchAnalysisSettings(),
     fetchDiagnostics(),
@@ -988,6 +1433,107 @@ if (libraryForm) {
       showToast("Bibliothek aktualisiert", "success");
     } catch (error) {
       showToast(error.message || "Unbekannter Fehler", "error");
+    }
+  });
+}
+
+if (playlistRefreshButton) {
+  playlistRefreshButton.addEventListener("click", () => {
+    refreshPlaylists();
+  });
+}
+
+if (playlistCreateForm) {
+  playlistCreateForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const name = playlistCreateName?.value.trim();
+    const description = playlistCreateDescription?.value.trim();
+    if (!name) {
+      showToast("Bitte einen Namen für die Playlist angeben", "warning");
+      return;
+    }
+    const payload = { name };
+    if (description) {
+      payload.description = description;
+    }
+    try {
+      const response = await apiFetch("/admin/playlists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || "Playlist konnte nicht angelegt werden");
+      }
+      const detail = await response.json();
+      updateSummariesFromDetail(detail);
+      applyDetailToUi(detail);
+      if (playlistCreateName) playlistCreateName.value = "";
+      if (playlistCreateDescription) playlistCreateDescription.value = "";
+      renderPlaylistList(playlistSummaries);
+      showToast("Playlist angelegt", "success");
+    } catch (error) {
+      showToast(error.message || "Playlist konnte nicht angelegt werden", "error");
+    }
+  });
+}
+
+if (playlistEditForm) {
+  playlistEditForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (currentPlaylistId == null) {
+      showToast("Bitte zuerst eine Playlist auswählen", "warning");
+      return;
+    }
+    const name = playlistEditName?.value.trim();
+    const description = playlistEditDescription?.value.trim() ?? "";
+    if (!name) {
+      showToast("Der Name darf nicht leer sein", "warning");
+      return;
+    }
+    updatePlaylistMetadata(currentPlaylistId, {
+      name,
+      description,
+    });
+  });
+}
+
+if (playlistSetFallbackButton) {
+  playlistSetFallbackButton.addEventListener("click", () => {
+    if (currentPlaylistId == null) {
+      showToast("Bitte zuerst eine Playlist auswählen", "warning");
+      return;
+    }
+    const isActive = playlistSummaries.some(
+      (item) => item.id === currentPlaylistId && item.is_fallback
+    );
+    setFallbackPlaylist(isActive ? null : currentPlaylistId);
+  });
+}
+
+if (playlistDeleteButton) {
+  playlistDeleteButton.addEventListener("click", () => {
+    if (currentPlaylistId == null) {
+      return;
+    }
+    if (window.confirm("Playlist wirklich löschen?")) {
+      deletePlaylist(currentPlaylistId);
+    }
+  });
+}
+
+if (playlistTrackSearchButton) {
+  playlistTrackSearchButton.addEventListener("click", () => {
+    searchPlaylistTracks();
+  });
+}
+
+if (playlistTrackSearchInput) {
+  playlistTrackSearchInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      searchPlaylistTracks();
     }
   });
 }

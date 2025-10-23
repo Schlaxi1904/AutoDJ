@@ -224,6 +224,98 @@
                 <button class="button" type="submit">Einstellungen speichern</button>
               </form>
             </article>
+            <article class="panel-card" aria-labelledby="playlist-title">
+              <header class="panel-card__header">
+                <h3 id="playlist-title">Autoplay-Playlisten</h3>
+                <button class="button button--ghost" type="button" id="playlist-refresh">
+                  Aktualisieren
+                </button>
+              </header>
+              <div class="playlist-manager" id="playlist-manager">
+                <section class="playlist-sidebar" aria-label="Playlisten">
+                  <form class="admin-form playlist-create" id="playlist-create-form" autocomplete="off">
+                    <label class="input">
+                      <span class="input__label">Neue Playlist</span>
+                      <input
+                        type="text"
+                        id="playlist-create-name"
+                        name="name"
+                        placeholder="z. B. Warmup"
+                        required
+                      />
+                    </label>
+                    <label class="input">
+                      <span class="input__label">Beschreibung (optional)</span>
+                      <input
+                        type="text"
+                        id="playlist-create-description"
+                        name="description"
+                        placeholder="Kurze Notiz"
+                      />
+                    </label>
+                    <button class="button" type="submit">Playlist anlegen</button>
+                  </form>
+                  <ul class="playlist-list" id="playlist-list" aria-live="polite"></ul>
+                </section>
+                <section class="playlist-detail" id="playlist-detail" aria-live="polite">
+                  <div class="playlist-empty" id="playlist-empty">
+                    <p>Wähle links eine Playlist oder lege eine neue an, um Songs hinzuzufügen.</p>
+                  </div>
+                  <div class="playlist-detail__content" id="playlist-detail-content" hidden>
+                    <header class="playlist-detail__header">
+                      <div class="playlist-detail__titles">
+                        <h4 id="playlist-detail-name">Playlist</h4>
+                        <p class="playlist-detail__description" id="playlist-detail-description"></p>
+                        <p class="playlist-detail__meta">
+                          <span id="playlist-detail-count">0 Titel</span>
+                          <span id="playlist-detail-fallback" class="badge" hidden>Autoplay aktiv</span>
+                        </p>
+                      </div>
+                      <div class="playlist-detail__actions">
+                        <button class="button button--ghost" type="button" id="playlist-set-fallback" disabled>
+                          Als Autoplay nutzen
+                        </button>
+                        <button class="button button--ghost" type="button" id="playlist-delete" disabled>
+                          Playlist löschen
+                        </button>
+                      </div>
+                    </header>
+                    <form class="admin-form playlist-edit" id="playlist-edit-form" autocomplete="off">
+                      <div class="grid">
+                        <label class="input">
+                          <span class="input__label">Name</span>
+                          <input type="text" id="playlist-edit-name" name="name" required />
+                        </label>
+                        <label class="input">
+                          <span class="input__label">Beschreibung</span>
+                          <input type="text" id="playlist-edit-description" name="description" />
+                        </label>
+                      </div>
+                      <button class="button button--ghost" type="submit">Metadaten speichern</button>
+                    </form>
+                    <section class="playlist-search" aria-label="Songs hinzufügen">
+                      <h5>Tracks hinzufügen</h5>
+                      <div class="input-group">
+                        <input
+                          type="search"
+                          id="playlist-track-search"
+                          placeholder="Artist oder Titel suchen"
+                          minlength="2"
+                        />
+                        <button class="button button--ghost" type="button" id="playlist-track-search-button">
+                          Suchen
+                        </button>
+                      </div>
+                      <ul class="playlist-search-results" id="playlist-track-results" aria-live="polite"></ul>
+                    </section>
+                    <section class="playlist-tracks" aria-label="Playlist-Inhalt">
+                      <h5>Tracks in dieser Playlist</h5>
+                      <ul class="playlist-tracks__list" id="playlist-tracks" aria-live="polite"></ul>
+                    </section>
+                  </div>
+                </section>
+              </div>
+            </article>
           </section>
 
           <section class="tab-panel" data-tab="light" role="tabpanel" hidden>

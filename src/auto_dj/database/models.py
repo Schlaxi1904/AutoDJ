@@ -125,6 +125,42 @@ class AdminUser(Base):
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
+class Playlist(Base):
+    """Named collection of tracks for fallback and curated playback."""
+
+    __tablename__ = "playlists"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    tracks: Mapped[list["PlaylistTrack"]] = relationship(
+        back_populates="playlist",
+        cascade="all, delete-orphan",
+        order_by="PlaylistTrack.position",
+    )
+
+
+class PlaylistTrack(Base):
+    """Ordering table linking tracks to playlists."""
+
+    __tablename__ = "playlist_tracks"
+
+    playlist_id: Mapped[int] = mapped_column(
+        ForeignKey("playlists.id", ondelete="CASCADE"), primary_key=True
+    )
+    track_id: Mapped[int] = mapped_column(
+        ForeignKey("tracks.id", ondelete="CASCADE"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    added_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    playlist: Mapped[Playlist] = relationship(back_populates="tracks")
+    track: Mapped[Track] = relationship()
+
+
 __all__ = [
     "Base",
     "Track",
@@ -135,4 +171,6 @@ __all__ = [
     "BlacklistEntry",
     "AuditLog",
     "AdminUser",
+    "Playlist",
+    "PlaylistTrack",
 ]

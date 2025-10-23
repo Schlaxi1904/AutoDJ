@@ -10,6 +10,7 @@ from sqlalchemy import func
 
 from ..config import QueuePolicy
 from ..database.models import QueueEntry, Track
+from .playlists import PlaylistService
 from ..database.session import Database
 
 logger = logging.getLogger(__name__)
@@ -22,9 +23,15 @@ class QueueStatus:
 
 
 class QueueManager:
-    def __init__(self, database: Database, policy: QueuePolicy) -> None:
+    def __init__(
+        self,
+        database: Database,
+        policy: QueuePolicy,
+        playlist_service: PlaylistService | None = None,
+    ) -> None:
         self._db = database
         self._policy = policy
+        self._playlists = playlist_service
 
     def enqueue(self, track: Track, source: str, guest_session: Optional[str]) -> QueueEntry:
         with self._db.session() as session:
@@ -48,6 +55,26 @@ class QueueManager:
             )
             if entry:
                 entry.status = "playing"
+                session.flush()
+                session.refresh(entry)
+                return entry
+
+        if not self._playlists:
+            return None
+
+        track_id = self._playlists.next_autoplay_track()
+        if track_id is None:
+            return None
+
+        with self._db.session() as session:
+            track = session.get(Track, track_id)
+            if not track:
+                return None
+            entry = QueueEntry(track=track, source="autoplay", guest_session=None)
+            entry.status = "playing"
+            session.add(entry)
+            session.flush()
+            session.refresh(entry)
             return entry
 
     def status(self) -> QueueStatus:
