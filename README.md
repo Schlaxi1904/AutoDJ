@@ -64,7 +64,10 @@ erhält die gleiche Passwort-Abfrage. Alternativ können `AUTO_DJ_SUPERUSER_DSN`
 Für einen regelmäßigen Funktionstest steht das Skript `scripts/system_check.py` bereit. Es prüft
 die Datenbank auf vorhandene Songs, legt testweise einen Eintrag in die Queue (inklusive
 Aufräumarbeiten) an und bewertet die DJ-Brain-Auswahl. Mit `--json` kann das Ergebnis maschinen-
-lesbar ausgegeben werden; bei Fehlern liefert das Skript einen ungleich null Exitcode.
+lesbar ausgegeben werden; bei Fehlern liefert das Skript einen ungleich null Exitcode. Zusätzlich
+sichert `python -m auto_dj.db_check` (beziehungsweise der automatische Startup-Check der Services)
+die Datenbankstruktur ab, führt `alembic upgrade head` aus und legt fehlende Tabellen/Indices
+nach.
 
 Der initiale Admin-Login lautet `admin` / `Admin123` und wird direkt unter dem Formular auf
 der Admin-Anmeldeseite angezeigt. Über den Link mit dem ⚙️-Symbol im Footer der Gäste-Seite
@@ -82,7 +85,10 @@ Nach erfolgreichem Login steht ein moduliertes Kontrollzentrum mit folgenden Ber
   „Superscenes erlaubt“ und „Öffentlich erreichbar“.
 * **Audio & Mixer** – Scan und Auswahl der verfügbaren ALSA/Pulse-Ausgabegeräte inklusive
   Neustart-Hinweis sowie Konfiguration von Crossfade, Lautstärke- und Bass-Kurven,
-  Filter-Übergängen und Time-Stretch-Modi.
+  Filter-Übergängen und Time-Stretch-Modi. Die Bluetooth-Steuerung nutzt `bluetoothctl`
+  und stellt sicher, dass der Service-User Zugriff auf die Gruppen `bluetooth`, `audio`
+  und `netdev` besitzt, dass `DBUS_SYSTEM_BUS_ADDRESS` gesetzt ist und `rfkill`/`bluetoothctl`
+  aktiv sind. Fehlende Berechtigungen werden mit klaren Hinweisen quittiert.
 * **Musikbibliothek** – Überblick über analysierte Tracks, Quarantänepfad und anpassbare Pfad-
   bzw. Datenbank-Einstellungen.
   * Hinweis: Der Begriff `DATABASE_URL` steht für die vollständige PostgreSQL-Verbindungs-

@@ -249,8 +249,8 @@ async function performSearch(query) {
   searchStatusEl.textContent = "Suche läuft …";
 
   try {
-    const params = new URLSearchParams({ query });
-    const response = await fetch(`${API.search}?${params.toString()}`);
+    const encodedQuery = encodeURIComponent(query);
+    const response = await fetch(`${API.search}?q=${encodedQuery}`);
     if (!response.ok) throw new Error("Suche fehlgeschlagen");
     const data = await response.json();
     renderSearchResults(data);

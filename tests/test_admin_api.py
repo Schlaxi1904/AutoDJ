@@ -7,6 +7,7 @@ pytest.importorskip("fastapi")
 pytest.importorskip("sqlalchemy")
 
 from fastapi.testclient import TestClient
+from urllib.parse import quote
 
 from auto_dj.config import AutoDjConfig, DatabaseConfig, PathsConfig
 from auto_dj.database.models import AdminUser
@@ -156,6 +157,20 @@ def test_admin_bluetooth_listing(admin_client):
         app.dependency_overrides.pop(get_bluetooth_manager, None)
 
 
+def test_admin_bluetooth_scan_alias(admin_client):
+    client, _ = admin_client
+
+    manager = FakeBluetoothManager()
+    app.dependency_overrides[get_bluetooth_manager] = lambda: manager
+    try:
+        response = client.post("/admin/bluetooth/scan")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["devices"][0]["address"] == "AA:BB:CC:DD:EE:FF"
+    finally:
+        app.dependency_overrides.pop(get_bluetooth_manager, None)
+
+
 def test_admin_bluetooth_connect_action(admin_client):
     client, _ = admin_client
 
@@ -170,6 +185,21 @@ def test_admin_bluetooth_connect_action(admin_client):
                 "set_default": False,
             },
         )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["device"]["connected"] is True
+    finally:
+        app.dependency_overrides.pop(get_bluetooth_manager, None)
+
+
+def test_admin_bluetooth_connect_path_endpoint(admin_client):
+    client, _ = admin_client
+
+    manager = FakeBluetoothManager()
+    app.dependency_overrides[get_bluetooth_manager] = lambda: manager
+    try:
+        encoded = quote(manager.device.address, safe="")
+        response = client.post(f"/admin/bluetooth/connect/{encoded}")
         assert response.status_code == 200
         payload = response.json()
         assert payload["device"]["connected"] is True

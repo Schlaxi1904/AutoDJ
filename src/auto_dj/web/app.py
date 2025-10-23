@@ -1,6 +1,7 @@
 """FastAPI web application with a modern control frontend."""
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from pathlib import Path
 import re
@@ -18,6 +19,7 @@ from ..audio.analyzer import summarize_music_directory
 from ..config import AutoDjConfig, load_config
 from ..database.models import AdminUser, QueueEntry, Track
 from ..database.session import Database
+from ..db_check import ensure_database_ready
 from ..services.admin import AdminService
 from ..services.audio_devices import AudioDeviceScanner
 from ..services.bluetooth import BluetoothDevice, BluetoothError, BluetoothManager
@@ -35,6 +37,12 @@ _PACKAGE_DIR = Path(__file__).resolve().parent
 _TEMPLATES = Jinja2Templates(directory=str(_PACKAGE_DIR / "templates"))
 _STATIC_DIR = _PACKAGE_DIR / "static"
 _CONFIG = load_config()
+
+
+@app.on_event("startup")
+async def _startup_db_check() -> None:
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, ensure_database_ready, _CONFIG)
 
 _SYSTEM_TOGGLE_KEY = "system.toggles"
 _AUDIO_OUTPUT_KEY = "audio.output_device"
@@ -147,6 +155,51 @@ def _bluetooth_device_to_out(device: BluetoothDevice) -> BluetoothDeviceOut:
         paired=device.paired,
         trusted=device.trusted,
         connected=device.connected,
+    )
+
+
+def _bluetooth_scan_response(manager: BluetoothManager) -> BluetoothScanOut:
+    try:
+        devices = manager.scan()
+    except BluetoothError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    return BluetoothScanOut(devices=[_bluetooth_device_to_out(device) for device in devices])
+
+
+def _bluetooth_connect_action(
+    manager: BluetoothManager,
+    scanner: AudioDeviceScanner,
+    settings: SettingsService,
+    payload: "BluetoothConnectRequest",
+) -> BluetoothActionOut:
+    try:
+        if payload.connect:
+            device = manager.connect_device(payload.address)
+        else:
+            device = manager.disconnect_device(payload.address)
+    except BluetoothError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audio_device_id: Optional[str] = None
+    if payload.connect and payload.set_default:
+        audio_device_id = _find_matching_audio_device(scanner, device.address, device.name)
+        if audio_device_id:
+            settings.set(_AUDIO_OUTPUT_KEY, {"device_id": audio_device_id})
+
+    if payload.connect:
+        message = "Bluetooth-Gerät verbunden"
+        if payload.set_default and not audio_device_id:
+            message = "Verbunden – bitte Ausgabegerät auswählen"
+    else:
+        message = "Bluetooth-Gerät getrennt"
+
+    return BluetoothActionOut(
+        device=_bluetooth_device_to_out(device),
+        audio_device_id=audio_device_id,
+        message=message,
     )
 
 
@@ -814,11 +867,18 @@ class TrackSearchOut(BaseModel):
 
 @app.get("/tracks/search", response_model=List[TrackSearchOut])
 async def search_tracks(
-    query: str = Query(..., min_length=2, description="Artist or title search"),
+    q: Optional[str] = Query(
+        None, min_length=2, description="Artist or title search", alias="q"
+    ),
+    query: Optional[str] = Query(None, min_length=2, description="Artist or title search"),
     limit: int = Query(5, ge=1, le=5),
     db: Database = Depends(get_database),
 ) -> List[TrackSearchOut]:
-    normalized_query = re.sub(r"\s+", " ", query).strip()
+    raw_query = query or q
+    if not raw_query:
+        return []
+
+    normalized_query = re.sub(r"\s+", " ", raw_query).strip()
     if not normalized_query:
         return []
 
@@ -1038,14 +1098,15 @@ async def admin_scan_bluetooth_devices(
     manager: BluetoothManager = Depends(get_bluetooth_manager),
     _: AdminUser = Depends(require_admin),
 ) -> BluetoothScanOut:
-    try:
-        devices = manager.scan()
-    except BluetoothError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-        ) from exc
-    return BluetoothScanOut(devices=[_bluetooth_device_to_out(device) for device in devices])
+    return _bluetooth_scan_response(manager)
+
+
+@app.post("/admin/bluetooth/scan", response_model=BluetoothScanOut)
+async def admin_scan_bluetooth_devices_root(
+    manager: BluetoothManager = Depends(get_bluetooth_manager),
+    _: AdminUser = Depends(require_admin),
+) -> BluetoothScanOut:
+    return _bluetooth_scan_response(manager)
 
 
 @app.post("/admin/audio/bluetooth/pair", response_model=BluetoothActionOut)
@@ -1088,32 +1149,20 @@ async def admin_connect_bluetooth_device(
     settings: SettingsService = Depends(get_settings_service),
     _: AdminUser = Depends(require_admin),
 ) -> BluetoothActionOut:
-    try:
-        if payload.connect:
-            device = manager.connect_device(payload.address)
-        else:
-            device = manager.disconnect_device(payload.address)
-    except BluetoothError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return _bluetooth_connect_action(manager, scanner, settings, payload)
 
-    audio_device_id: Optional[str] = None
-    if payload.connect and payload.set_default:
-        audio_device_id = _find_matching_audio_device(scanner, device.address, device.name)
-        if audio_device_id:
-            settings.set(_AUDIO_OUTPUT_KEY, {"device_id": audio_device_id})
 
-    if payload.connect:
-        message = "Bluetooth-Gerät verbunden"
-        if payload.set_default and not audio_device_id:
-            message = "Verbunden – bitte Ausgabegerät auswählen"
-    else:
-        message = "Bluetooth-Gerät getrennt"
-
-    return BluetoothActionOut(
-        device=_bluetooth_device_to_out(device),
-        audio_device_id=audio_device_id,
-        message=message,
-    )
+@app.post("/admin/bluetooth/connect/{address}", response_model=BluetoothActionOut)
+async def admin_connect_bluetooth_device_path(
+    address: str,
+    set_default: bool = Query(False),
+    manager: BluetoothManager = Depends(get_bluetooth_manager),
+    scanner: AudioDeviceScanner = Depends(get_audio_device_scanner),
+    settings: SettingsService = Depends(get_settings_service),
+    _: AdminUser = Depends(require_admin),
+) -> BluetoothActionOut:
+    payload = BluetoothConnectRequest(address=address, connect=True, set_default=set_default)
+    return _bluetooth_connect_action(manager, scanner, settings, payload)
 
 
 @app.get("/admin/audio/mixer", response_model=MixerSettingsOut)

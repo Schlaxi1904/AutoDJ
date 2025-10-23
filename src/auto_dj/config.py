@@ -24,10 +24,11 @@ class PathsConfig:
 
 @dataclass(frozen=True)
 class DatabaseConfig:
-    """Connection settings for PostgreSQL."""
+    """Connection settings for the persistence layer."""
 
     dsn: str = "postgresql+psycopg://auto-dj:auto-dj@localhost:5432/auto_dj"
     echo: bool = False
+    schema: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -200,6 +201,7 @@ def load_config() -> AutoDjConfig:
     database = DatabaseConfig(
         dsn=database_dsn,
         echo=_env_bool("AUTO_DJ_DB_ECHO", False),
+        schema=os.environ.get("AUTO_DJ_DB_SCHEMA") or None,
     )
 
     web_security = WebSecurityConfig(

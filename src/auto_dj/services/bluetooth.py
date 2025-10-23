@@ -3,6 +3,13 @@ from __future__ import annotations
 
 import re
 import subprocess
+import getpass
+try:  # pragma: no cover - Windows fallback
+    import grp  # type: ignore
+except ImportError:  # pragma: no cover - Windows fallback
+    grp = None
+import logging
+import os
 from dataclasses import dataclass
 from typing import Iterable, List
 
@@ -25,10 +32,60 @@ class BluetoothManager:
 
     def __init__(self, timeout: int = 12) -> None:
         self._timeout = timeout
+        self._logger = logging.getLogger(__name__)
+
+    def _ensure_prerequisites(self) -> None:
+        required_groups = {"bluetooth", "audio", "netdev"}
+        username = getpass.getuser()
+        missing: List[str] = []
+        if grp is not None:
+            try:
+                group_names = {grp.getgrgid(gid).gr_name for gid in os.getgroups()}
+            except Exception:  # pragma: no cover - platform specific fallback
+                group_names = set()
+            missing = [group for group in required_groups if group not in group_names]
+        if missing and os.geteuid() != 0:
+            raise BluetoothError(
+                "Fehlende Berechtigungen: Benutzer "
+                f"{username} benötigt Zugriff auf {', '.join(sorted(missing))}."
+            )
+
+        os.environ.setdefault(
+            "DBUS_SYSTEM_BUS_ADDRESS", "unix:path=/var/run/dbus/system_bus_socket"
+        )
+
+        try:
+            subprocess.run(
+                ["rfkill", "unblock", "bluetooth"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+            )
+        except FileNotFoundError:
+            self._logger.debug("rfkill nicht verfügbar – überspringe Freigabe")
+
+        try:
+            result = subprocess.run(
+                ["bluetoothctl", "power", "on"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=self._timeout,
+                check=False,
+            )
+            if result.returncode != 0:
+                self._logger.warning(
+                    "bluetoothctl power on fehlgeschlagen: %s",
+                    result.stderr.strip() or result.stdout.strip(),
+                )
+        except FileNotFoundError:
+            raise BluetoothError("bluetoothctl nicht gefunden") from None
 
     def _execute(
         self, args: Iterable[str], *, input_data: str | None = None
     ) -> subprocess.CompletedProcess:
+        self._ensure_prerequisites()
         command = ["bluetoothctl", *args]
         try:
             result = subprocess.run(

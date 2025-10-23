@@ -8,6 +8,7 @@ import uvicorn
 
 from .audio.engine import AudioEngine
 from .config import load_config
+from .db_check import ensure_database_ready
 from .database.session import Database
 from .services.dj_brain import DjBrain
 from .services.queue import QueueManager
@@ -22,6 +23,7 @@ def main() -> None:
 
     config = load_config()
     configure_logging(config.paths.runtime_log_root, config.paths.persistent_log_root)
+    ensure_database_ready(config)
 
     if args.service == "web":
         uvicorn.run(app, host="0.0.0.0", port=8080, log_level="info")

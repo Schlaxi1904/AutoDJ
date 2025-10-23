@@ -54,4 +54,9 @@ def test_run_diagnostics_succeeds(tmp_path):
 
     assert exit_code == 0
     assert all(result.success for result in results)
-    assert {result.name for result in results} == {"music_library", "queue_flow", "dj_brain"}
+    assert {result.name for result in results} == {
+        "database",
+        "music_library",
+        "queue_flow",
+        "dj_brain",
+    }

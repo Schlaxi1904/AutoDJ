@@ -720,7 +720,10 @@ async function scanBluetoothDevices() {
     return;
   }
   try {
-    const response = await apiFetch("/admin/audio/bluetooth/scan", { method: "POST" });
+    let response = await apiFetch("/admin/bluetooth/scan", { method: "POST" });
+    if (response.status === 404) {
+      response = await apiFetch("/admin/audio/bluetooth/scan", { method: "POST" });
+    }
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
       throw new Error(data.detail || "Scan fehlgeschlagen");
@@ -1572,13 +1575,27 @@ if (bluetoothDeviceList) {
     };
     target.disabled = true;
     try {
-      const response = await apiFetch("/admin/audio/bluetooth/connect", {
+      const requestConfig = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(payload),
-      });
+      };
+      let response;
+      if (payload.connect) {
+        const encoded = encodeURIComponent(payload.address);
+        let url = `/admin/bluetooth/connect/${encoded}`;
+        if (payload.set_default) {
+          url += "?set_default=1";
+        }
+        response = await apiFetch(url, { method: "POST" });
+        if (response.status === 404) {
+          response = await apiFetch("/admin/audio/bluetooth/connect", requestConfig);
+        }
+      } else {
+        response = await apiFetch("/admin/audio/bluetooth/connect", requestConfig);
+      }
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(data.detail || "Bluetooth-Aktion fehlgeschlagen");

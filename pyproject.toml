@@ -17,6 +17,7 @@ dependencies = [
     "jinja2>=3.1",
     "python-multipart",
     "psutil",
+    "alembic",
 ]
 
 [project.optional-dependencies]

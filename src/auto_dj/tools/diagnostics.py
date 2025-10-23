@@ -6,9 +6,12 @@ import sys
 from dataclasses import dataclass
 from typing import Callable, Iterable, List, Tuple
 
+from sqlalchemy import inspect
+
 from ..config import AutoDjConfig, load_config
-from ..database.models import QueueEntry, Track
+from ..database.models import Base, QueueEntry, Track
 from ..database.session import Database
+from ..db_check import ensure_database_ready
 from ..services.dj_brain import DjBrain
 from ..services.playlists import PlaylistService
 from ..services.queue import QueueManager
@@ -35,9 +38,23 @@ class DiagnosticContext:
 
 
 def _ensure_database(config: AutoDjConfig) -> Database:
+    ensure_database_ready(config)
     database = Database(config.database)
     database.create_all()
     return database
+
+
+def check_database_integrity(context: DiagnosticContext) -> str:
+    ensure_database_ready(context.config)
+    inspector = inspect(context.database._engine)
+    missing = [
+        table for table in Base.metadata.tables if not inspector.has_table(table)
+    ]
+    if missing:
+        raise DiagnosticError(
+            "Datenbank unvollständig: " + ", ".join(sorted(missing))
+        )
+    return "Datenbankverbindung und Schema ok"
 
 
 def check_music_library(context: DiagnosticContext) -> str:
@@ -122,6 +139,7 @@ CheckFunc = Callable[[DiagnosticContext], str]
 
 
 CHECKS: List[Tuple[str, CheckFunc]] = [
+    ("database", check_database_integrity),
     ("music_library", check_music_library),
     ("queue_flow", check_queue_flow),
     ("dj_brain", check_dj_brain),

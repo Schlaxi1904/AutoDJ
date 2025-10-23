@@ -105,6 +105,22 @@ def test_guest_search_returns_results(test_client):
     assert payload[0]["title"] == "Search Title"
 
 
+def test_guest_search_supports_q_alias_and_url_encoding(test_client):
+    client, database = test_client
+    seed_track(database, artist="Massive", title="Attack")
+
+    response = client.get("/tracks/search", params={"q": "massive"})
+    assert response.status_code == 200
+    assert response.json()
+
+    encoded = "Massive Attack".replace(" ", "%20")
+    response_encoded = client.get(f"/tracks/search?q={encoded}")
+    assert response_encoded.status_code == 200
+    payload = response_encoded.json()
+    assert payload
+    assert payload[0]["title"] == "Attack"
+
+
 def test_guest_search_is_case_insensitive_and_accent_agnostic(test_client):
     client, database = test_client
     seed_track(database, artist="Tiësto", title="Adagio For Strings")
