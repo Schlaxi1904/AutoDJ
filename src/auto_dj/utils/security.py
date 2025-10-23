@@ -3,60 +3,72 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from typing import Final
+from typing import Final, Optional
 
 import bcrypt
-from passlib.context import CryptContext
 
 
 LOGGER = logging.getLogger(__name__)
 
 _BCRYPT_PREFIX: Final[str] = "$bcrypt-sha256$"
 
-_pwd_context = CryptContext(
-    schemes=["bcrypt_sha256"],
-    default="bcrypt_sha256",
-    deprecated="auto",
-)
+
+def _digest_password(password: str) -> bytes:
+    """Return the SHA-256 digest used by the bcrypt_sha256 scheme."""
+
+    return hashlib.sha256(password.encode("utf-8")).digest()
 
 
-def _verify_bcrypt_sha256(password: str, password_hash: str) -> bool:
-    """Manually verify bcrypt_sha256 hashes without passlib bug checks."""
+def _normalise_bcrypt_hash(password_hash: str) -> Optional[bytes]:
+    """Convert stored bcrypt_sha256 strings into a raw bcrypt hash.
 
-    if not password_hash.startswith(_BCRYPT_PREFIX):
-        return False
+    passlib stores bcrypt_sha256 hashes using the format
 
-    digest = hashlib.sha256(password.encode("utf-8")).digest()
-    stored = password_hash[len(_BCRYPT_PREFIX) :].encode("utf-8")
-    try:
-        return bcrypt.checkpw(digest, stored)
-    except ValueError:
-        # bcrypt may still raise on malformed hashes – treat as mismatch.
-        return False
+    ``$bcrypt-sha256$IDENT,ROUNDS$<salt+hash>``
+
+    while our own hashes are saved as ``$bcrypt-sha256$$IDENT$ROUNDS$...``.
+    This helper accepts both encodings and returns a byte string that can be
+    directly passed to :func:`bcrypt.checkpw`.
+    """
+
+    if not password_hash or not password_hash.startswith(_BCRYPT_PREFIX):
+        return None
+
+    remainder = password_hash[len(_BCRYPT_PREFIX) :]
+    if remainder.startswith("$"):
+        normalised = remainder
+    else:
+        try:
+            ident_rounds, payload = remainder.split("$", 1)
+            ident, rounds = ident_rounds.split(",", 1)
+        except ValueError:
+            LOGGER.warning("Malformed bcrypt_sha256 hash encountered")
+            return None
+        normalised = f"${ident}${rounds}${payload}"
+    return normalised.encode("utf-8")
 
 
 def hash_password(password: str) -> str:
-    """Hash a plaintext password using bcrypt_sha256."""
+    """Hash a plaintext password using bcrypt_sha256 semantics."""
 
     if not password:
         raise ValueError("Password must not be empty")
-    return _pwd_context.hash(password)
+
+    digest = _digest_password(password)
+    hashed = bcrypt.hashpw(digest, bcrypt.gensalt())
+    return f"{_BCRYPT_PREFIX}{hashed.decode('utf-8')}"
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    """Verify a password against a stored hash.
+    """Verify a password against a stored hash without passlib dependencies."""
 
-    Passlib's bcrypt backend raises when probing for long-password bugs on
-    certain builds (notably on Raspberry Pi distributions shipping bcrypt
-    >=4). We optimistically use the context, but gracefully fall back to a
-    manual bcrypt_sha256 verifier so the login flow never crashes.
-    """
-
-    if not password_hash:
+    normalised = _normalise_bcrypt_hash(password_hash)
+    if not normalised:
         return False
 
+    digest = _digest_password(password)
     try:
-        return _pwd_context.verify(password, password_hash)
-    except ValueError as exc:
-        LOGGER.warning("bcrypt verification failed – falling back", exc_info=exc)
-        return _verify_bcrypt_sha256(password, password_hash)
+        return bcrypt.checkpw(digest, normalised)
+    except (ValueError, RuntimeError) as exc:  # pragma: no cover - defensive
+        LOGGER.warning("bcrypt verification raised", exc_info=exc)
+        return False
