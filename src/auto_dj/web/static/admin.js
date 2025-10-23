@@ -42,6 +42,8 @@ const mixerTimeStretch = document.getElementById("mixer-time-stretch");
 const libraryForm = document.getElementById("library-form");
 const libraryTrackCount = document.getElementById("library-track-count");
 const libraryQuarantine = document.getElementById("library-quarantine");
+const libraryFilesystemCount = document.getElementById("library-filesystem-count");
+const libraryFilesystemPreview = document.getElementById("library-filesystem-preview");
 const libraryMusicSelect = document.getElementById("library-music-select");
 const libraryMusicPath = document.getElementById("library-music-path");
 const libraryDatabaseDsn = document.getElementById("library-database-dsn");
@@ -72,6 +74,25 @@ let systemInterval = null;
 let togglesUpdating = false;
 const LIGHT_DEFAULT_ACTION_ORDER = ["idle", "break", "build", "drop", "outro"];
 let lightActionLabels = {};
+
+function escapeHtml(value) {
+  return value.replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case '"':
+        return "&quot;";
+      case "'":
+        return "&#39;";
+      default:
+        return char;
+    }
+  });
+}
 
 function showToast(message, variant = "info") {
   if (!toast || !toastMessage) {
@@ -582,6 +603,16 @@ async function fetchLibrarySettings() {
     const data = await response.json();
     if (libraryTrackCount) libraryTrackCount.textContent = data.track_count;
     if (libraryQuarantine) libraryQuarantine.textContent = data.quarantine_path;
+    if (libraryFilesystemCount) libraryFilesystemCount.textContent = data.filesystem_count;
+    if (libraryFilesystemPreview) {
+      if (Array.isArray(data.filesystem_preview) && data.filesystem_preview.length) {
+        libraryFilesystemPreview.innerHTML = data.filesystem_preview
+          .map((item) => `<span>${escapeHtml(item)}</span>`)
+          .join("");
+      } else {
+        libraryFilesystemPreview.innerHTML = "<span>Keine Mediendateien gefunden</span>";
+      }
+    }
     if (libraryMusicPath) libraryMusicPath.value = data.music_path;
     if (libraryDatabaseDsn) libraryDatabaseDsn.value = data.database_dsn;
     await refreshMusicLocations(data.music_path);

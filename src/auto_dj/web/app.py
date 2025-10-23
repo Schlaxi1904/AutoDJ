@@ -12,6 +12,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
 
+from ..audio.analyzer import summarize_music_directory
 from ..config import AutoDjConfig, load_config
 from ..database.models import AdminUser, QueueEntry, Track
 from ..database.session import Database
@@ -261,11 +262,16 @@ def _library_state(
     with db.session() as session:
         track_count = session.execute(select(func.count(Track.id))).scalar_one()
     quarantine = config.paths.music_root / "_quarantine"
+    music_path = str(merged.get("music_path", defaults["music_path"]))
+    filesystem_count, filesystem_preview = summarize_music_directory(Path(music_path))
+
     return LibraryStateOut(
-        music_path=str(merged.get("music_path", defaults["music_path"])),
+        music_path=music_path,
         database_dsn=str(merged.get("database_dsn", defaults["database_dsn"])),
         track_count=int(track_count or 0),
         quarantine_path=str(quarantine),
+        filesystem_count=filesystem_count,
+        filesystem_preview=filesystem_preview,
     )
 
 
@@ -508,6 +514,8 @@ class LibraryStateOut(BaseModel):
     database_dsn: str
     track_count: int
     quarantine_path: str
+    filesystem_count: int
+    filesystem_preview: List[str]
 
 
 class LibraryUpdateRequest(BaseModel):

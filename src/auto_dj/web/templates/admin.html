@@ -182,6 +182,14 @@
               <dl class="system-stats">
                 <div><dt>Tracks analysiert</dt><dd id="library-track-count">--</dd></div>
                 <div><dt>Quarantäne</dt><dd id="library-quarantine">--</dd></div>
+                <div>
+                  <dt>Dateien im Ordner</dt>
+                  <dd id="library-filesystem-count">--</dd>
+                </div>
+                <div>
+                  <dt>Gefundene Dateien</dt>
+                  <dd id="library-filesystem-preview" class="library-preview">--</dd>
+                </div>
               </dl>
               <form class="admin-form" id="library-form" autocomplete="off">
                 <div class="input">
@@ -206,8 +214,12 @@
                   >
                 </label>
                 <label class="input">
-                  <span class="input__label">DATABASE_URL</span>
+                  <span class="input__label">Datenbank-Verbindung (DATABASE_URL)</span>
                   <input type="text" id="library-database-dsn" name="database_dsn" />
+                  <small class="input__hint"
+                    >Format: <code>postgresql://benutzer:passwort@host:5432/datenbank</code>. Wird zur Verbindung
+                    mit PostgreSQL verwendet.</small
+                  >
                 </label>
                 <button class="button" type="submit">Einstellungen speichern</button>
               </form>
