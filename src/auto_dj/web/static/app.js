@@ -5,9 +5,30 @@ const API = {
 };
 
 const guestSessionKey = "auto-dj-guest-session";
+
+function generateGuestSessionId() {
+  if (window.crypto && typeof window.crypto.randomUUID === "function") {
+    return window.crypto.randomUUID();
+  }
+
+  if (window.crypto && typeof window.crypto.getRandomValues === "function") {
+    const bytes = new Uint32Array(4);
+    window.crypto.getRandomValues(bytes);
+    return (
+      "gs-" +
+      Array.from(bytes)
+        .map((value) => value.toString(16).padStart(8, "0"))
+        .join("")
+    );
+  }
+
+  const fallback = Date.now().toString(16) + Math.random().toString(16).slice(2, 10);
+  return `gs-${fallback}`;
+}
+
 let guestSession = window.localStorage.getItem(guestSessionKey);
 if (!guestSession) {
-  guestSession = crypto.randomUUID();
+  guestSession = generateGuestSessionId();
   window.localStorage.setItem(guestSessionKey, guestSession);
 }
 

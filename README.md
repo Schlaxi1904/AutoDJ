@@ -42,6 +42,8 @@ Programmierungs-Entwurf für den Auto-DJ mit Daslight-5-Integration.
 python -m auto_dj web    # Startet die Web-API (FastAPI/Uvicorn)
 python -m auto_dj engine # Startet den Audio-Engine-Skeleton
 python -m auto_dj brain  # Initialisiert die Brain-Komponenten
+# Integritätstest nach der Installation
+./scripts/system_check.py      # führt Warteschlangen-, DJ- und Bibliothekschecks durch
 ```
 
 Der Installer exportiert automatisch eine `AUTO_DJ_DATABASE_DSN`, sodass sich der Python-Code
@@ -58,6 +60,11 @@ nicht beschreibbar sind, fällt die Anwendung automatisch auf `~/.auto-dj/logs/r
 Wer das Setup ohne das Shell-Skript ausführt (`python -m auto_dj.setup --ensure-database`),
 erhält die gleiche Passwort-Abfrage. Alternativ können `AUTO_DJ_SUPERUSER_DSN` oder
 `AUTO_DJ_SUPERUSER_PASSWORD` zur Authentifizierung gesetzt werden.
+
+Für einen regelmäßigen Funktionstest steht das Skript `scripts/system_check.py` bereit. Es prüft
+die Datenbank auf vorhandene Songs, legt testweise einen Eintrag in die Queue (inklusive
+Aufräumarbeiten) an und bewertet die DJ-Brain-Auswahl. Mit `--json` kann das Ergebnis maschinen-
+lesbar ausgegeben werden; bei Fehlern liefert das Skript einen ungleich null Exitcode.
 
 Der initiale Admin-Login lautet `admin` / `Admin123` und wird direkt unter dem Formular auf
 der Admin-Anmeldeseite angezeigt. Über den Link mit dem ⚙️-Symbol im Footer der Gäste-Seite
