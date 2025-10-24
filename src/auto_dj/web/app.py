@@ -34,9 +34,9 @@ from .security import SessionManager
 
 app = FastAPI(title="Auto-DJ")
 
-_PACKAGE_DIR = Path(__file__).resolve().parent
-_TEMPLATES = Jinja2Templates(directory=str(_PACKAGE_DIR / "templates"))
-_STATIC_DIR = _PACKAGE_DIR / "static"
+BASE_DIR = Path(__file__).resolve().parent
+_TEMPLATES = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+_STATIC_DIR = BASE_DIR / "static"
 _CONFIG = load_config()
 
 
