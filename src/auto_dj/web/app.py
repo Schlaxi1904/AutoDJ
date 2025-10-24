@@ -945,7 +945,7 @@ async def search_tracks(
         None, min_length=2, description="Artist or title search", alias="q"
     ),
     query: Optional[str] = Query(None, min_length=2, description="Artist or title search"),
-    limit: int = Query(5, ge=1, le=5),
+    limit: int = Query(5, ge=1, le=50),
     db: Database = Depends(get_database),
 ) -> List[TrackSearchOut]:
     raw_query = query or q

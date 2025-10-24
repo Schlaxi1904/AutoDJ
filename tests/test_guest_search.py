@@ -154,6 +154,21 @@ def test_guest_search_limits_to_five_results(test_client):
     assert len(payload) == 5
 
 
+def test_admin_can_request_larger_search_batches(test_client):
+    client, database = test_client
+    for index in range(30):
+        seed_track(
+            database,
+            artist=f"Artist {index}",
+            title=f"Playlist Track {index}",
+        )
+
+    response = client.get("/tracks/search", params={"query": "Playlist", "limit": 25})
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 25
+
+
 def test_guest_search_handles_punctuation_tokens(test_client):
     client, database = test_client
     seed_track(database, artist="Imagine Dragons", title="Believer")
