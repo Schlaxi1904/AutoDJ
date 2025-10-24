@@ -45,9 +45,17 @@ class BluetoothManager:
                 group_names = set()
             missing = [group for group in required_groups if group not in group_names]
         if missing and os.geteuid() != 0:
+            required = ", ".join(sorted(required_groups))
+            missing_groups = ", ".join(sorted(missing))
+            fix_hint = (
+                "sudo usermod -aG {groups} {user} && sudo reboot".format(
+                    groups=required.replace(", ", ","), user=username
+                )
+            )
             raise BluetoothError(
                 "Fehlende Berechtigungen: Benutzer "
-                f"{username} benötigt Zugriff auf {', '.join(sorted(missing))}."
+                f"{username} benötigt Zugriff auf {missing_groups}. "
+                "Führe z. B. '{cmd}' aus und melde dich erneut an.".format(cmd=fix_hint)
             )
 
         os.environ.setdefault(

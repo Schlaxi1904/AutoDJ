@@ -95,7 +95,8 @@ Nach erfolgreichem Login steht ein moduliertes Kontrollzentrum mit folgenden Ber
   Filter-Übergängen und Time-Stretch-Modi. Die Bluetooth-Steuerung nutzt `bluetoothctl`
   und stellt sicher, dass der Service-User Zugriff auf die Gruppen `bluetooth`, `audio`
   und `netdev` besitzt, dass `DBUS_SYSTEM_BUS_ADDRESS` gesetzt ist und `rfkill`/`bluetoothctl`
-  aktiv sind. Fehlende Berechtigungen werden mit klaren Hinweisen quittiert.
+  aktiv sind. Fehlende Berechtigungen werden mit klaren Hinweisen quittiert – auf einem
+  Raspberry Pi hilft z. B. `sudo usermod -aG bluetooth,audio,netdev pi && sudo reboot`.
 * **Musikbibliothek** – Überblick über analysierte Tracks, Quarantänepfad und anpassbare Pfad-
   bzw. Datenbank-Einstellungen.
   * Hinweis: Der Begriff `DATABASE_URL` steht für die vollständige PostgreSQL-Verbindungs-
