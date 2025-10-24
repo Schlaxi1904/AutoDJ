@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, func, or_, select
+from sqlalchemy.sql.elements import ColumnElement
 
 from ..audio.analyzer import summarize_music_directory
 from ..config import AutoDjConfig, load_config
@@ -131,6 +132,79 @@ def _normalize_text(value: str) -> str:
     decomposed = unicodedata.normalize("NFKD", value or "")
     stripped = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
     return stripped.casefold()
+
+
+_TOKEN_ALNUM_RE = re.compile(r"[^0-9a-z]+")
+_SQL_PUNCTUATION_REPLACEMENTS: Tuple[Tuple[str, str], ...] = (
+    (" ", ""),
+    ("-", ""),
+    ("_", ""),
+    ("/", ""),
+    ("\\", ""),
+    (".", ""),
+    (",", ""),
+    ("!", ""),
+    ("?", ""),
+    (":", ""),
+    (";", ""),
+    ("(", ""),
+    (")", ""),
+    ("[", ""),
+    ("]", ""),
+    ("{", ""),
+    ("}", ""),
+    ("'", ""),
+    ("\"", ""),
+    ("&", ""),
+    ("+", ""),
+)
+_SQL_ACCENT_REPLACEMENTS: Tuple[Tuple[str, str], ...] = (
+    ("ä", "a"),
+    ("á", "a"),
+    ("à", "a"),
+    ("â", "a"),
+    ("ã", "a"),
+    ("å", "a"),
+    ("æ", "ae"),
+    ("ç", "c"),
+    ("é", "e"),
+    ("è", "e"),
+    ("ê", "e"),
+    ("ë", "e"),
+    ("í", "i"),
+    ("ì", "i"),
+    ("î", "i"),
+    ("ï", "i"),
+    ("ñ", "n"),
+    ("ó", "o"),
+    ("ò", "o"),
+    ("ô", "o"),
+    ("õ", "o"),
+    ("ö", "o"),
+    ("ø", "o"),
+    ("œ", "oe"),
+    ("ú", "u"),
+    ("ù", "u"),
+    ("û", "u"),
+    ("ü", "u"),
+    ("ý", "y"),
+    ("ÿ", "y"),
+    ("ß", "ss"),
+)
+
+
+def _normalize_sql_column(column: ColumnElement) -> ColumnElement:
+    normalized = func.lower(column)
+    for source, target in _SQL_PUNCTUATION_REPLACEMENTS:
+        normalized = func.replace(normalized, source, target)
+    for source, target in _SQL_ACCENT_REPLACEMENTS:
+        normalized = func.replace(normalized, source, target)
+    return normalized
+
+
+def _sanitize_token(value: str) -> str:
+    return _TOKEN_ALNUM_RE.sub("", _normalize_text(value))
+
 
 
 def _merge_system_toggles(settings: SettingsService, config: AutoDjConfig) -> SystemToggleState:
@@ -882,14 +956,20 @@ async def search_tracks(
     if not normalized_query:
         return []
 
-    tokens = [token for token in normalized_query.split(" ") if token]
-    if not tokens:
+    raw_tokens = [token for token in re.split(r"\s+", normalized_query) if token]
+    sanitized_tokens = [_sanitize_token(token) for token in raw_tokens]
+    sanitized_tokens = [token for token in sanitized_tokens if token]
+    if not sanitized_tokens:
         return []
 
-    normalized_tokens = [_normalize_text(token) for token in tokens]
+    normalized_title = _normalize_sql_column(Track.title)
+    normalized_artist = _normalize_sql_column(Track.artist)
     filters = [
-        or_(Track.title.ilike(f"%{token}%"), Track.artist.ilike(f"%{token}%"))
-        for token in tokens
+        or_(
+            normalized_title.like(f"%{token}%"),
+            normalized_artist.like(f"%{token}%"),
+        )
+        for token in sanitized_tokens
     ]
 
     with db.session() as session:
@@ -903,8 +983,8 @@ async def search_tracks(
 
     results: List[Track] = []
     for track in candidates:
-        haystack = _normalize_text(f"{track.artist} {track.title}")
-        if all(token in haystack for token in normalized_tokens):
+        haystack = _sanitize_token(f"{track.artist} {track.title}")
+        if all(token in haystack for token in sanitized_tokens):
             results.append(track)
         if len(results) >= limit:
             break

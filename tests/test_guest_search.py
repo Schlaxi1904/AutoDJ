@@ -152,3 +152,26 @@ def test_guest_search_limits_to_five_results(test_client):
     assert response.status_code == 200
     payload = response.json()
     assert len(payload) == 5
+
+
+def test_guest_search_handles_punctuation_tokens(test_client):
+    client, database = test_client
+    seed_track(database, artist="Imagine Dragons", title="Believer")
+
+    response = client.get(
+        "/tracks/search",
+        params={"query": "Imagine Dragons - believer"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload
+    assert payload[0]["title"] == "Believer"
+
+    punctuation_response = client.get(
+        "/tracks/search",
+        params={"query": "Believer,"},
+    )
+    assert punctuation_response.status_code == 200
+    punctuation_payload = punctuation_response.json()
+    assert punctuation_payload
+    assert punctuation_payload[0]["artist"] == "Imagine Dragons"
