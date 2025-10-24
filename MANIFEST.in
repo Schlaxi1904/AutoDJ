@@ -1,0 +1,2 @@
+recursive-include src/auto_dj/web/templates *.html
+recursive-include src/auto_dj/web/static *
