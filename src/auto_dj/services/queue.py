@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 
 from sqlalchemy import func
+from sqlalchemy.orm import selectinload
 
 from ..config import QueuePolicy
 from ..database.models import QueueEntry, Track
@@ -17,8 +18,31 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class QueueTrackSnapshot:
+    id: int
+    artist: str
+    title: str
+    duration_ms: int
+    bpm: float
+    genre: str
+    key_camelot: str
+    energy_avg: float
+
+
+@dataclass
+class QueueEntrySnapshot:
+    id: int
+    track_id: int
+    track: QueueTrackSnapshot
+    source: str
+    guest_session: Optional[str]
+    created_at: datetime
+    status: str
+
+
+@dataclass
 class QueueStatus:
-    entries: List[QueueEntry]
+    entries: List[QueueEntrySnapshot]
     remaining_slots: int
 
 
@@ -33,7 +57,9 @@ class QueueManager:
         self._policy = policy
         self._playlists = playlist_service
 
-    def enqueue(self, track: Track | int, source: str, guest_session: Optional[str]) -> QueueEntry:
+    def enqueue(
+        self, track: Track | int, source: str, guest_session: Optional[str]
+    ) -> QueueEntrySnapshot:
         """Enqueue a track either by instance or primary key."""
 
         track_id = track if isinstance(track, int) else track.id
@@ -45,21 +71,22 @@ class QueueManager:
             track_obj = session.get(Track, track_id)
             if not track_obj:
                 raise ValueError("Track not found")
-
             entry = QueueEntry(track=track_obj, source=source, guest_session=guest_session)
             session.add(entry)
             session.flush()
             session.refresh(entry)
+            snapshot = _snapshot_entry(entry)
             logger.info(
                 "Queued track",
                 extra={"track": track_obj.title, "source": source, "track_id": track_obj.id},
             )
-            return entry
+            return snapshot
 
-    def next_track(self) -> Optional[QueueEntry]:
+    def next_track(self) -> Optional[QueueEntrySnapshot]:
         with self._db.session() as session:
             entry = (
                 session.query(QueueEntry)
+                .options(selectinload(QueueEntry.track))
                 .filter(QueueEntry.status == "pending")
                 .order_by(QueueEntry.created_at.asc())
                 .first()
@@ -68,7 +95,7 @@ class QueueManager:
                 entry.status = "playing"
                 session.flush()
                 session.refresh(entry)
-                return entry
+                return _snapshot_entry(entry)
 
         if not self._playlists:
             return None
@@ -86,24 +113,32 @@ class QueueManager:
             session.add(entry)
             session.flush()
             session.refresh(entry)
-            return entry
+            return _snapshot_entry(entry)
 
     def status(self) -> QueueStatus:
         with self._db.session() as session:
-            entries = list(session.query(QueueEntry).order_by(QueueEntry.created_at.asc()).all())
+            entries = (
+                session.query(QueueEntry)
+                .options(selectinload(QueueEntry.track))
+                .order_by(QueueEntry.created_at.asc())
+                .all()
+            )
             remaining = self._policy.max_length - len(entries)
-            return QueueStatus(entries, remaining)
+            snapshots = [_snapshot_entry(entry) for entry in entries]
+            return QueueStatus(snapshots, remaining)
 
-    def current_track(self) -> Optional[QueueEntry]:
+    def current_track(self) -> Optional[QueueEntrySnapshot]:
         """Return the queue entry that is currently playing, if any."""
 
         with self._db.session() as session:
-            return (
+            entry = (
                 session.query(QueueEntry)
+                .options(selectinload(QueueEntry.track))
                 .filter(QueueEntry.status == "playing")
                 .order_by(QueueEntry.created_at.desc())
                 .first()
             )
+            return _snapshot_entry(entry) if entry else None
 
     def remove(self, entry_id: int) -> None:
         """Remove an entry from the queue."""
@@ -114,7 +149,7 @@ class QueueManager:
                 raise ValueError("Queue entry not found")
             session.delete(entry)
 
-    def promote(self, entry_id: int) -> QueueEntry:
+    def promote(self, entry_id: int) -> QueueEntrySnapshot:
         """Move an entry to the front of the queue by adjusting its creation time."""
 
         with self._db.session() as session:
@@ -132,9 +167,9 @@ class QueueManager:
             entry.created_at = new_created_at
             session.flush()
             session.refresh(entry)
-            return entry
+            return _snapshot_entry(entry)
 
-    def mark_playing(self, entry_id: int) -> QueueEntry:
+    def mark_playing(self, entry_id: int) -> QueueEntrySnapshot:
         """Mark a queue entry as the currently playing track."""
 
         with self._db.session() as session:
@@ -148,4 +183,27 @@ class QueueManager:
             entry.status = "playing"
             session.flush()
             session.refresh(entry)
-            return entry
+            return _snapshot_entry(entry)
+
+
+def _snapshot_entry(entry: QueueEntry) -> QueueEntrySnapshot:
+    track = entry.track
+    track_snapshot = QueueTrackSnapshot(
+        id=track.id,
+        artist=track.artist,
+        title=track.title,
+        duration_ms=track.duration_ms,
+        bpm=track.bpm,
+        genre=track.genre,
+        key_camelot=track.key_camelot,
+        energy_avg=track.energy_avg,
+    )
+    return QueueEntrySnapshot(
+        id=entry.id,
+        track_id=entry.track_id,
+        track=track_snapshot,
+        source=entry.source,
+        guest_session=entry.guest_session,
+        created_at=entry.created_at,
+        status=entry.status,
+    )
