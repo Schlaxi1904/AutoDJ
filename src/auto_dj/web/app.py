@@ -17,7 +17,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.sql.elements import ColumnElement
 
-from ..audio.analyzer import summarize_music_directory
 from ..config import AutoDjConfig, load_config
 from ..database.models import AdminUser, QueueEntry, Track
 from ..database.session import Database
@@ -25,6 +24,7 @@ from ..db_check import ensure_database_ready
 from ..services.admin import AdminService
 from ..services.audio_devices import AudioDeviceScanner
 from ..services.bluetooth import BluetoothDevice, BluetoothError, BluetoothManager
+from ..services.library import LibraryScanReport, LibraryService, LibraryState
 from ..services.playlists import PlaylistDetail, PlaylistService, PlaylistSummary
 from ..services.queue import QueueManager
 from ..services.osc import OscService
@@ -106,6 +106,14 @@ def get_session_manager(config: AutoDjConfig = Depends(get_config)) -> SessionMa
 
 def get_settings_service(db: Database = Depends(get_database)) -> SettingsService:
     return SettingsService(db)
+
+
+def get_library_service(
+    db: Database = Depends(get_database),
+    config: AutoDjConfig = Depends(get_config),
+    settings: SettingsService = Depends(get_settings_service),
+) -> LibraryService:
+    return LibraryService(db, config, settings)
 
 
 def get_system_monitor(
@@ -437,40 +445,37 @@ def _network_mode_label(config: AutoDjConfig, toggles: SystemToggleState) -> str
     return "Lokal (HTTP)"
 
 
-def _library_state(
-    db: Database, settings: SettingsService, config: AutoDjConfig
-) -> LibraryStateOut:
-    defaults = {
-        "music_path": str(config.paths.music_root),
-        "database_dsn": config.database.dsn,
-    }
-    stored = settings.get_dict(_LIBRARY_SETTINGS_KEY, defaults)
-    merged = {**defaults, **stored}
-    with db.session() as session:
-        track_count = session.execute(select(func.count(Track.id))).scalar_one()
-    quarantine = config.paths.music_root / "_quarantine"
-    music_path = str(merged.get("music_path", defaults["music_path"]))
-    filesystem_count, filesystem_preview = summarize_music_directory(Path(music_path))
+def _library_state(library: LibraryService, *, auto_index: bool = True) -> LibraryStateOut:
+    snapshot = library.state(auto_index=auto_index)
+    return _library_state_from_snapshot(snapshot)
 
+
+def _library_state_from_snapshot(snapshot: LibraryState) -> LibraryStateOut:
     return LibraryStateOut(
-        music_path=music_path,
-        database_dsn=str(merged.get("database_dsn", defaults["database_dsn"])),
-        track_count=int(track_count or 0),
-        quarantine_path=str(quarantine),
-        filesystem_count=filesystem_count,
-        filesystem_preview=filesystem_preview,
+        music_path=str(snapshot.music_path),
+        database_dsn=str(snapshot.database_dsn),
+        track_count=int(snapshot.track_count),
+        quarantine_path=str(snapshot.quarantine_path),
+        filesystem_count=snapshot.filesystem_count,
+        filesystem_preview=list(snapshot.filesystem_preview),
+    )
+
+
+def _library_report_to_out(report: LibraryScanReport) -> LibraryScanReportOut:
+    return LibraryScanReportOut(
+        total_files=report.total_files,
+        inserted=report.inserted,
+        updated=report.updated,
+        skipped=report.skipped,
+        errors=list(report.errors),
     )
 
 
 def _discover_music_locations(
-    settings: SettingsService, config: AutoDjConfig
+    library: LibraryService, config: AutoDjConfig
 ) -> List[MusicLocationOut]:
-    defaults = {
-        "music_path": str(config.paths.music_root),
-        "database_dsn": config.database.dsn,
-    }
-    stored = settings.get_dict(_LIBRARY_SETTINGS_KEY, defaults)
-    current_path = str(stored.get("music_path", defaults["music_path"]))
+    settings = library.get_settings()
+    current_path = str(settings.get("music_path", str(config.paths.music_root)))
 
     seen: set[str] = set()
     locations: List[MusicLocationOut] = []
@@ -758,6 +763,23 @@ class LibraryStateOut(BaseModel):
 class LibraryUpdateRequest(BaseModel):
     music_path: Optional[str] = None
     database_dsn: Optional[str] = None
+
+
+class LibraryScanReportOut(BaseModel):
+    total_files: int
+    inserted: int
+    updated: int
+    skipped: int
+    errors: List[str]
+
+
+class LibraryScanRequest(BaseModel):
+    music_path: Optional[str] = None
+
+
+class LibraryScanResponse(BaseModel):
+    report: LibraryScanReportOut
+    library: LibraryStateOut
 
 
 class MusicLocationOut(BaseModel):
@@ -1270,35 +1292,52 @@ async def admin_update_mixer_settings(
 
 @app.get("/admin/library/settings", response_model=LibraryStateOut)
 async def admin_library_settings(
-    db: Database = Depends(get_database),
-    settings: SettingsService = Depends(get_settings_service),
-    config: AutoDjConfig = Depends(get_config),
+    library: LibraryService = Depends(get_library_service),
     _: AdminUser = Depends(require_admin),
 ) -> LibraryStateOut:
-    return _library_state(db, settings, config)
+    return _library_state(library)
 
 
 @app.get("/admin/library/locations", response_model=List[MusicLocationOut])
 async def admin_library_locations(
-    settings: SettingsService = Depends(get_settings_service),
+    library: LibraryService = Depends(get_library_service),
     config: AutoDjConfig = Depends(get_config),
     _: AdminUser = Depends(require_admin),
 ) -> List[MusicLocationOut]:
-    return _discover_music_locations(settings, config)
+    return _discover_music_locations(library, config)
 
 
 @app.post("/admin/library/settings", response_model=LibraryStateOut)
 async def admin_update_library_settings(
     payload: LibraryUpdateRequest,
-    db: Database = Depends(get_database),
-    settings: SettingsService = Depends(get_settings_service),
-    config: AutoDjConfig = Depends(get_config),
+    library: LibraryService = Depends(get_library_service),
     _: AdminUser = Depends(require_admin),
 ) -> LibraryStateOut:
-    updates = payload.model_dump(exclude_none=True)
-    if updates:
-        settings.update_dict(_LIBRARY_SETTINGS_KEY, updates)
-    return _library_state(db, settings, config)
+    snapshot = library.update_settings(
+        music_path=payload.music_path,
+        database_dsn=payload.database_dsn,
+    )
+    return _library_state_from_snapshot(snapshot)
+
+
+@app.post("/admin/library/scan", response_model=LibraryScanResponse)
+async def admin_scan_library(
+    payload: LibraryScanRequest,
+    library: LibraryService = Depends(get_library_service),
+    _: AdminUser = Depends(require_admin),
+) -> LibraryScanResponse:
+    target_state: Optional[LibraryState] = None
+    if payload.music_path:
+        target_state = library.update_settings(music_path=payload.music_path)
+    else:
+        target_state = library.state(auto_index=False)
+
+    report = library.scan(target_state.music_path)
+    refreshed = library.state(auto_index=False)
+    return LibraryScanResponse(
+        report=_library_report_to_out(report),
+        library=_library_state_from_snapshot(refreshed),
+    )
 
 
 @app.get("/admin/playlists", response_model=List[PlaylistSummaryOut])

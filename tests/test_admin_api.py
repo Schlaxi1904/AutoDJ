@@ -13,8 +13,10 @@ from auto_dj.config import AutoDjConfig, DatabaseConfig, PathsConfig
 from auto_dj.database.models import AdminUser
 from auto_dj.database.session import Database
 from auto_dj.services.bluetooth import BluetoothDevice
+from auto_dj.services.library import LibraryService
 from auto_dj.services.playlists import PlaylistService
 from auto_dj.services.queue import QueueManager
+from auto_dj.services.settings import SettingsService
 from auto_dj.tools.diagnostics import DiagnosticResult
 from auto_dj.web.app import (
     app,
@@ -22,8 +24,10 @@ from auto_dj.web.app import (
     get_config,
     get_database,
     get_diagnostics_runner,
+    get_library_service,
     get_playlist_service,
     get_queue_manager,
+    get_settings_service,
     require_admin,
 )
 
@@ -50,6 +54,8 @@ def admin_client(tmp_path):
 
     playlist_service = PlaylistService(database)
     queue_manager = QueueManager(database, config.queue_policy, playlist_service)
+    settings_service = SettingsService(database)
+    library_service = LibraryService(database, config, settings_service)
 
     admin = AdminUser(
         id=1,
@@ -65,6 +71,8 @@ def admin_client(tmp_path):
         get_database: lambda: database,
         get_playlist_service: lambda: playlist_service,
         get_queue_manager: lambda: queue_manager,
+        get_settings_service: lambda: settings_service,
+        get_library_service: lambda: library_service,
         require_admin: lambda: admin,
     }
 
@@ -73,7 +81,7 @@ def admin_client(tmp_path):
 
     try:
         with TestClient(app) as client:
-            yield client, database
+            yield client, database, config
     finally:
         for dependency in list(overrides):
             app.dependency_overrides.pop(dependency, None)
@@ -127,7 +135,7 @@ class FakeBluetoothManager:
 
 
 def test_admin_diagnostics_runner_override(admin_client):
-    client, _ = admin_client
+    client, _, _ = admin_client
 
     def runner():
         return 0, [DiagnosticResult(name="music_library", success=True, detail="ok")]
@@ -145,7 +153,7 @@ def test_admin_diagnostics_runner_override(admin_client):
 
 
 def test_admin_bluetooth_listing(admin_client):
-    client, _ = admin_client
+    client, _, _ = admin_client
 
     manager = FakeBluetoothManager()
     app.dependency_overrides[get_bluetooth_manager] = lambda: manager
@@ -156,6 +164,20 @@ def test_admin_bluetooth_listing(admin_client):
         assert payload["devices"][0]["name"] == "Studio Speaker"
     finally:
         app.dependency_overrides.pop(get_bluetooth_manager, None)
+
+
+def test_admin_library_scan_indexes_tracks(admin_client):
+    client, _, config = admin_client
+    music_dir = config.paths.music_root
+    music_dir.mkdir(parents=True, exist_ok=True)
+    track_path = music_dir / "Test Artist - Test Song.mp3"
+    track_path.write_bytes(b"fake")
+
+    response = client.post("/admin/library/scan", json={"music_path": str(music_dir)})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["library"]["track_count"] == 1
+    assert payload["report"]["inserted"] == 1
 
 
 def test_admin_bluetooth_scan_alias(admin_client):

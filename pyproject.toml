@@ -17,6 +17,7 @@ dependencies = [
     "jinja2>=3.1",
     "bcrypt>=4.1",
     "cffi>=1.15",
+    "mutagen>=1.46",
     "python-multipart>=0.0.9",
     "starlette>=0.36",
     "psutil>=5.9",

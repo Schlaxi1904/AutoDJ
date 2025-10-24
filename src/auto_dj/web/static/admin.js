@@ -758,6 +758,32 @@ async function fetchMixerSettings() {
   }
 }
 
+async function applyLibraryState(data) {
+  if (!data) {
+    return;
+  }
+  if (libraryTrackCount) libraryTrackCount.textContent = data.track_count ?? "--";
+  if (libraryQuarantine) libraryQuarantine.textContent = data.quarantine_path ?? "--";
+  if (libraryFilesystemCount)
+    libraryFilesystemCount.textContent = data.filesystem_count ?? 0;
+  if (libraryFilesystemPreview) {
+    if (Array.isArray(data.filesystem_preview) && data.filesystem_preview.length) {
+      libraryFilesystemPreview.innerHTML = data.filesystem_preview
+        .map((item) => `<span>${escapeHtml(item)}</span>`)
+        .join("");
+    } else {
+      libraryFilesystemPreview.innerHTML = "<span>Keine Mediendateien gefunden</span>";
+    }
+  }
+  if (libraryMusicPath && typeof data.music_path === "string") {
+    libraryMusicPath.value = data.music_path;
+  }
+  if (libraryDatabaseDsn && typeof data.database_dsn === "string") {
+    libraryDatabaseDsn.value = data.database_dsn;
+  }
+  await refreshMusicLocations(data.music_path);
+}
+
 async function fetchLibrarySettings() {
   try {
     const response = await apiFetch("/admin/library/settings");
@@ -765,21 +791,7 @@ async function fetchLibrarySettings() {
       throw new Error("Bibliotheksdaten konnten nicht geladen werden");
     }
     const data = await response.json();
-    if (libraryTrackCount) libraryTrackCount.textContent = data.track_count;
-    if (libraryQuarantine) libraryQuarantine.textContent = data.quarantine_path;
-    if (libraryFilesystemCount) libraryFilesystemCount.textContent = data.filesystem_count;
-    if (libraryFilesystemPreview) {
-      if (Array.isArray(data.filesystem_preview) && data.filesystem_preview.length) {
-        libraryFilesystemPreview.innerHTML = data.filesystem_preview
-          .map((item) => `<span>${escapeHtml(item)}</span>`)
-          .join("");
-      } else {
-        libraryFilesystemPreview.innerHTML = "<span>Keine Mediendateien gefunden</span>";
-      }
-    }
-    if (libraryMusicPath) libraryMusicPath.value = data.music_path;
-    if (libraryDatabaseDsn) libraryDatabaseDsn.value = data.database_dsn;
-    await refreshMusicLocations(data.music_path);
+    await applyLibraryState(data);
   } catch (error) {
     showToast(error.message || "Unbekannter Fehler", "error");
   }
@@ -1693,9 +1705,53 @@ if (libraryMusicPath) {
 
 if (libraryRescanButton) {
   libraryRescanButton.addEventListener("click", async () => {
-    const success = await refreshMusicLocations(libraryMusicPath?.value || "");
-    if (success) {
-      showToast("Speicherorte aktualisiert", "success");
+    if (libraryRescanButton.disabled) {
+      return;
+    }
+    libraryRescanButton.disabled = true;
+    try {
+      const payload = {};
+      const pathValue = libraryMusicPath?.value?.trim();
+      if (pathValue) {
+        payload.music_path = pathValue;
+      }
+      const response = await apiFetch("/admin/library/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || "Bibliothek konnte nicht indiziert werden");
+      }
+      const data = await response.json();
+      if (data.library) {
+        await applyLibraryState(data.library);
+      }
+      const report = data.report || {};
+      const parts = [];
+      if (typeof report.inserted === "number") {
+        parts.push(`${report.inserted} neu`);
+      }
+      if (typeof report.updated === "number") {
+        parts.push(`${report.updated} aktualisiert`);
+      }
+      if (typeof report.skipped === "number") {
+        parts.push(`${report.skipped} unverändert`);
+      }
+      const summary = parts.length ? parts.join(", ") : "Scan abgeschlossen";
+      const errorCount = Array.isArray(report.errors) ? report.errors.length : 0;
+      if (errorCount) {
+        console.warn("Bibliotheks-Scan Hinweise", report.errors);
+      }
+      showToast(
+        `${summary}${errorCount ? ` – ${errorCount} Fehler (siehe Konsole)` : ""}`,
+        errorCount ? "warn" : "success"
+      );
+    } catch (error) {
+      showToast(error.message || "Scan fehlgeschlagen", "error");
+    } finally {
+      libraryRescanButton.disabled = false;
     }
   });
 }
@@ -1726,11 +1782,7 @@ if (libraryForm) {
         throw new Error(data.detail || "Bibliothek konnte nicht gespeichert werden");
       }
       const data = await response.json();
-      if (libraryTrackCount) libraryTrackCount.textContent = data.track_count;
-      if (libraryQuarantine) libraryQuarantine.textContent = data.quarantine_path;
-      if (libraryMusicPath) libraryMusicPath.value = data.music_path;
-      if (libraryDatabaseDsn) libraryDatabaseDsn.value = data.database_dsn;
-      await refreshMusicLocations(data.music_path);
+      await applyLibraryState(data);
       showToast("Bibliothek aktualisiert", "success");
     } catch (error) {
       showToast(error.message || "Unbekannter Fehler", "error");
