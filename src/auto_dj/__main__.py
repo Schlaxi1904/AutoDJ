@@ -11,6 +11,7 @@ from .config import load_config
 from .db_check import ensure_database_ready
 from .database.session import Database
 from .services.dj_brain import DjBrain
+from .services.playlists import PlaylistService
 from .services.queue import QueueManager
 from .utils.logging import configure_logging
 from .web.app import app
@@ -37,9 +38,11 @@ def main() -> None:
             engine.stop()
     elif args.service == "brain":
         db = Database(config.database)
-        queue = QueueManager(db, config.queue_policy)
+        playlists = PlaylistService(db)
+        queue = QueueManager(db, config.queue_policy, playlists)
         brain = DjBrain(config)
-        logging.getLogger(__name__).info("Brain service initialised", extra={"queue_length": queue.status().remaining_slots})
+        logging.getLogger(__name__).info("Brain service initialised")
+        brain.run_service(db, queue)
 
 
 if __name__ == "__main__":

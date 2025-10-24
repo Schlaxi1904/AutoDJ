@@ -96,7 +96,7 @@ def check_queue_flow(context: DiagnosticContext) -> str:
     entry = None
     try:
         try:
-            entry = context.queue.enqueue(track, "diagnostic", "system-check")
+            entry = context.queue.enqueue(track.id, "diagnostic", "system-check")
         except RuntimeError as exc:
             raise DiagnosticError(
                 "Warteschlange voll – bitte Einträge bereinigen und erneut testen."

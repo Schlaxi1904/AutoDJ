@@ -921,9 +921,8 @@ async def add_to_queue(payload: EnqueueRequest, queue: QueueManager = Depends(ge
         track = session.get(Track, payload.track_id)
         if not track:
             raise HTTPException(status_code=404, detail="Track not found")
-        entry = queue.enqueue(track, "request", payload.guest_session)
-        session.refresh(entry)
-        return entry
+    entry = queue.enqueue(payload.track_id, "request", payload.guest_session)
+    return entry
 
 
 @app.get("/now-playing", response_model=Optional[QueueEntryOut])

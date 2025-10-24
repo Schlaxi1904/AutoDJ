@@ -33,16 +33,27 @@ class QueueManager:
         self._policy = policy
         self._playlists = playlist_service
 
-    def enqueue(self, track: Track, source: str, guest_session: Optional[str]) -> QueueEntry:
+    def enqueue(self, track: Track | int, source: str, guest_session: Optional[str]) -> QueueEntry:
+        """Enqueue a track either by instance or primary key."""
+
+        track_id = track if isinstance(track, int) else track.id
+
         with self._db.session() as session:
             count = session.query(QueueEntry).count()
             if count >= self._policy.max_length:
                 raise RuntimeError("Queue is full")
-            entry = QueueEntry(track=track, source=source, guest_session=guest_session)
+            track_obj = session.get(Track, track_id)
+            if not track_obj:
+                raise ValueError("Track not found")
+
+            entry = QueueEntry(track=track_obj, source=source, guest_session=guest_session)
             session.add(entry)
             session.flush()
             session.refresh(entry)
-            logger.info("Queued track", extra={"track": track.title, "source": source})
+            logger.info(
+                "Queued track",
+                extra={"track": track_obj.title, "source": source, "track_id": track_obj.id},
+            )
             return entry
 
     def next_track(self) -> Optional[QueueEntry]:
