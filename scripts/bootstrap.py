@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -39,17 +40,81 @@ def install_project(python: str) -> None:
 
 
 def ensure_database(python: str) -> None:
-    setup_cmd = [
-        python,
-        "-m",
-        "auto_dj.setup",
-        "--ensure-database",
-        "--init-db",
-    ]
-    if os.environ.get("AUTO_DJ_SKIP_DB_INIT"):
+    env = os.environ.copy()
+    if env.get("AUTO_DJ_SKIP_DB_INIT"):
         print("AUTO_DJ_SKIP_DB_INIT gesetzt – überspringe Datenbankinitialisierung")
     else:
-        _run(setup_cmd)
+        setup_cmd = [
+            python,
+            "-m",
+            "auto_dj.setup",
+            "--ensure-database",
+            "--init-db",
+        ]
+
+        def _run_setup(env_override: dict[str, str] | None = None) -> None:
+            merged = env.copy()
+            if env_override:
+                merged.update(env_override)
+            _run(setup_cmd, env=merged)
+
+        superuser_dsn = env.get("AUTO_DJ_SUPERUSER_DSN", "").strip()
+        try:
+            if superuser_dsn:
+                _run_setup()
+            else:
+                socket_dsn = "postgresql://postgres@/postgres?host=/var/run/postgresql"
+                python_exec = shutil.which(python) or python
+                subprocess.run(
+                    [
+                        "sudo",
+                        "-u",
+                        "postgres",
+                        "env",
+                        f"AUTO_DJ_SUPERUSER_DSN={socket_dsn}",
+                        python_exec,
+                        "-m",
+                        "auto_dj.setup",
+                        "--ensure-database",
+                        "--init-db",
+                    ],
+                    cwd=PROJECT_ROOT,
+                    check=True,
+                    env=env,
+                )
+                _run_setup()
+        except Exception:
+            subprocess.run(
+                [
+                    "sudo",
+                    "-u",
+                    "postgres",
+                    "psql",
+                    "-v",
+                    "ON_ERROR_STOP=1",
+                    "-c",
+                    """
+DO $$
+BEGIN
+   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'auto-dj') THEN
+      CREATE ROLE "auto-dj" WITH LOGIN PASSWORD 'auto-dj';
+   END IF;
+END$$;
+DO $$
+BEGIN
+   IF NOT EXISTS (SELECT FROM pg_database WHERE datname = 'auto_dj') THEN
+      CREATE DATABASE auto_dj OWNER "auto-dj";
+   END IF;
+END$$;
+GRANT ALL PRIVILEGES ON DATABASE auto_dj TO "auto-dj";
+""",
+                ],
+                cwd=PROJECT_ROOT,
+                check=True,
+                env=env,
+            )
+            _run_setup()
+
     _run([python, "-m", "auto_dj.db_check"])
     _run([python, "-m", "auto_dj.setup", "--ensure-admin"])
 

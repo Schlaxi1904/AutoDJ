@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+from importlib.resources import files
 from pathlib import Path
 import re
 import unicodedata
@@ -35,7 +36,9 @@ from .security import SessionManager
 app = FastAPI(title="Auto-DJ")
 
 BASE_DIR = Path(__file__).resolve().parent
-_TEMPLATES = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+_TEMPLATES = Jinja2Templates(
+    directory=str(files("auto_dj.web").joinpath("templates"))
+)
 _STATIC_DIR = BASE_DIR / "static"
 _CONFIG = load_config()
 
@@ -854,6 +857,7 @@ class DiagnosticResultOut(BaseModel):
     name: str
     success: bool
     detail: str
+    severity: str
 
 
 class DiagnosticRunOut(BaseModel):
@@ -1534,7 +1538,12 @@ async def admin_run_diagnostics(
     return DiagnosticRunOut(
         exit_code=exit_code,
         results=[
-            DiagnosticResultOut(name=item.name, success=item.success, detail=item.detail)
+            DiagnosticResultOut(
+                name=item.name,
+                success=item.success,
+                detail=item.detail,
+                severity=item.severity,
+            )
             for item in results
         ],
     )

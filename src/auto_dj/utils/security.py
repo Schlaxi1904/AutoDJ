@@ -5,7 +5,13 @@ import hashlib
 import logging
 from typing import Final, Optional
 
-import bcrypt
+try:
+    import bcrypt  # noqa: F401
+except ModuleNotFoundError as exc:  # pragma: no cover - defensive guard
+    raise RuntimeError(
+        "Fehlende Abhängigkeit: 'bcrypt'. Bitte 'pip install bcrypt cffi' ausführen "
+        "oder die Pakete zur Installation hinzufügen."
+    ) from exc
 
 
 LOGGER = logging.getLogger(__name__)

@@ -21,11 +21,16 @@ class DiagnosticError(RuntimeError):
     """Raised when a diagnostic check fails."""
 
 
+class DiagnosticWarning(RuntimeError):
+    """Raised when a diagnostic check should emit a warning only."""
+
+
 @dataclass
 class DiagnosticResult:
     name: str
     success: bool
     detail: str
+    severity: str = "ok"
 
 
 @dataclass
@@ -61,7 +66,7 @@ def check_music_library(context: DiagnosticContext) -> str:
     with context.database.session() as session:
         track_count = session.query(Track).count()
         if track_count == 0:
-            raise DiagnosticError(
+            raise DiagnosticWarning(
                 "Keine Titel in der Datenbank gefunden. Bitte Musikordner prüfen."
             )
         preview = (
@@ -80,7 +85,9 @@ def check_queue_flow(context: DiagnosticContext) -> str:
     with context.database.session() as session:
         track = session.query(Track).order_by(Track.added_at.desc()).first()
         if not track:
-            raise DiagnosticError("Keine Tracks verfügbar, Warteschlange kann nicht getestet werden.")
+            raise DiagnosticWarning(
+                "Keine Tracks verfügbar, Warteschlange kann nicht getestet werden."
+            )
         previous_statuses = {
             entry.id: entry.status
             for entry in session.query(QueueEntry).all()
@@ -121,7 +128,7 @@ def check_dj_brain(context: DiagnosticContext) -> str:
             .all()
         )
     if len(tracks) < 2:
-        raise DiagnosticError(
+        raise DiagnosticWarning(
             "Zu wenige Tracks zur Bewertung gefunden. Mindestens zwei Songs erforderlich."
         )
     reference = tracks[0]
@@ -165,16 +172,18 @@ def run_diagnostics(config: AutoDjConfig | None = None) -> Tuple[int, List[Diagn
     for name, check in CHECKS:
         try:
             detail = check(context)
+        except DiagnosticWarning as exc:
+            results.append(DiagnosticResult(name, False, str(exc), "warn"))
         except DiagnosticError as exc:
-            results.append(DiagnosticResult(name, False, str(exc)))
+            results.append(DiagnosticResult(name, False, str(exc), "error"))
             exit_code = max(exit_code, 1)
         except Exception as exc:  # pragma: no cover - defensive guard
             results.append(
-                DiagnosticResult(name, False, f"Unerwarteter Fehler: {exc}")
+                DiagnosticResult(name, False, f"Unerwarteter Fehler: {exc}", "error")
             )
             exit_code = 2
         else:
-            results.append(DiagnosticResult(name, True, detail))
+            results.append(DiagnosticResult(name, True, detail, "ok"))
     return exit_code, results
 
 
@@ -200,7 +209,12 @@ def main(argv: Iterable[str] | None = None) -> int:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
         for result in results:
-            status = "OK" if result.success else "FEHLER"
+            if result.severity == "ok":
+                status = "OK"
+            elif result.severity == "warn":
+                status = "WARN"
+            else:
+                status = "FEHLER"
             print(f"[{status}] {result.name}: {result.detail}")
     return exit_code
 

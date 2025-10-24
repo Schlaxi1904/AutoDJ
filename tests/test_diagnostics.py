@@ -60,3 +60,17 @@ def test_run_diagnostics_succeeds(tmp_path):
         "queue_flow",
         "dj_brain",
     }
+
+
+def test_run_diagnostics_warn_on_empty_library(tmp_path):
+    config = build_config(tmp_path)
+    database = Database(config.database)
+    database.create_all()
+
+    exit_code, results = run_diagnostics(config)
+
+    assert exit_code == 0
+    severities = {result.name: result.severity for result in results}
+    assert severities["music_library"] == "warn"
+    assert severities["queue_flow"] == "warn"
+    assert severities["dj_brain"] == "warn"

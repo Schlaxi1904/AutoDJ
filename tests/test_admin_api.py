@@ -139,6 +139,7 @@ def test_admin_diagnostics_runner_override(admin_client):
         payload = response.json()
         assert payload["exit_code"] == 0
         assert payload["results"][0]["detail"] == "ok"
+        assert payload["results"][0]["severity"] == "ok"
     finally:
         app.dependency_overrides.pop(get_diagnostics_runner, None)
 

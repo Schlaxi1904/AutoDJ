@@ -1,2 +1,3 @@
-recursive-include src/auto_dj/web/templates *.html
-recursive-include src/auto_dj/web/static *
+graft src/auto_dj/web/templates
+graft src/auto_dj/web/static
+global-exclude *.pyc __pycache__ .DS_Store
