@@ -11,6 +11,7 @@ from sqlalchemy.engine import make_url
 
 from .config import AutoDjConfig, load_config
 from .database.session import Database
+from .db_check import ensure_database_ready
 from .services.admin import AdminService
 
 
@@ -45,6 +46,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def ensure_database(config: AutoDjConfig, superuser_dsn: str | None) -> None:
     """Ensure the configured PostgreSQL role and database exist."""
+
+    skip_flag = os.getenv("AUTO_DJ_SKIP_DB_INIT", "").strip() == "1"
+    if skip_flag:
+        print("AUTO_DJ_SKIP_DB_INIT gesetzt – überspringe Superuser-Phase")
+        run_migrations_with_app_dsn(config)
+        return
+
+    if can_connect_app_dsn(config):
+        print("Datenbank erreichbar – nutze App-DSN ohne Superuser-Provisionierung")
+        run_migrations_with_app_dsn(config)
+        return
 
     target_url = make_url(config.database.dsn)
     base_driver = target_url.drivername.split("+", 1)[0]
@@ -128,6 +140,8 @@ def ensure_database(config: AutoDjConfig, superuser_dsn: str | None) -> None:
             "check superuser credentials"
         ) from exc
 
+    run_migrations_with_app_dsn(config)
+
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
@@ -139,7 +153,7 @@ def main(argv: list[str] | None = None) -> int:
         ensure_database(config, args.database_superuser_dsn)
 
     if args.init_db:
-        database.create_all()
+        run_migrations_with_app_dsn(config)
         print("Database schema ready")
 
     if args.ensure_admin:
@@ -150,6 +164,20 @@ def main(argv: list[str] | None = None) -> int:
     if not any([args.ensure_database, args.init_db, args.ensure_admin]):
         print("Nothing to do. Use --ensure-database, --init-db and/or --ensure-admin.")
     return 0
+
+
+def can_connect_app_dsn(config: AutoDjConfig) -> bool:
+    try:
+        with connect(config.database.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+        return True
+    except Exception:
+        return False
+
+
+def run_migrations_with_app_dsn(config: AutoDjConfig) -> None:
+    ensure_database_ready(config)
 
 
 if __name__ == "__main__":

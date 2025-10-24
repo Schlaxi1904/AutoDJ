@@ -41,23 +41,30 @@ def install_project(python: str) -> None:
 
 def ensure_database(python: str) -> None:
     env = os.environ.copy()
-    if env.get("AUTO_DJ_SKIP_DB_INIT"):
-        print("AUTO_DJ_SKIP_DB_INIT gesetzt – überspringe Datenbankinitialisierung")
+    setup_cmd = [
+        python,
+        "-m",
+        "auto_dj.setup",
+        "--ensure-database",
+        "--init-db",
+    ]
+
+    def _run_setup(env_override: dict[str, str] | None = None) -> None:
+        merged = env.copy()
+        if env_override:
+            merged.update(env_override)
+        _run(setup_cmd, env=merged)
+
+    skip_superuser = env.get("AUTO_DJ_SKIP_DB_INIT", "").strip() == "1"
+    app_dsn_present = bool(env.get("AUTO_DJ_DATABASE_DSN"))
+
+    if skip_superuser or app_dsn_present:
+        if skip_superuser:
+            print("AUTO_DJ_SKIP_DB_INIT gesetzt – nutze App-DSN ohne Superuser")
+        else:
+            print("AUTO_DJ_DATABASE_DSN gesetzt – versuche Provisionierung ohne Superuser")
+        _run_setup()
     else:
-        setup_cmd = [
-            python,
-            "-m",
-            "auto_dj.setup",
-            "--ensure-database",
-            "--init-db",
-        ]
-
-        def _run_setup(env_override: dict[str, str] | None = None) -> None:
-            merged = env.copy()
-            if env_override:
-                merged.update(env_override)
-            _run(setup_cmd, env=merged)
-
         superuser_dsn = env.get("AUTO_DJ_SUPERUSER_DSN", "").strip()
         try:
             if superuser_dsn:

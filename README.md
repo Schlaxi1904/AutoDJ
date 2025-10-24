@@ -42,6 +42,12 @@ python3 scripts/bootstrap.py
 # export AUTO_DJ_SKIP_DB_INIT=1
 ./scripts/install.sh
 
+# Bereits provisionierte Datenbank nur prüfen (ohne Superuser-Login)
+source .venv/bin/activate
+export AUTO_DJ_DATABASE_DSN="postgresql://auto-dj:auto-dj@localhost:5432/auto_dj"
+export AUTO_DJ_SKIP_DB_INIT=1
+python -m auto_dj.setup --ensure-database --init-db
+
 # Virtuelle Umgebung aktivieren, damit "python" auf die projektinternen Pakete zeigt
 source .venv/bin/activate
 
