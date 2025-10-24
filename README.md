@@ -16,6 +16,10 @@ Programmierungs-Entwurf für den Auto-DJ mit Daslight-5-Integration.
 ## Quickstart
 
 ```bash
+# Komplett-Bootstrap (legt virtuelle Umgebung an, installiert FastAPI & Co.,
+# richtet die Datenbank ein und prüft das Schema)
+python3 scripts/bootstrap.py
+
 # Abhängigkeiten installieren, Datenbanktabellen erstellen und Standard-Admin anlegen
 # (legt standardmäßig den PostgreSQL-User "auto-dj" mit dem Passwort "auto-dj" an)
 #
