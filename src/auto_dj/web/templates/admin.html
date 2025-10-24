@@ -100,7 +100,10 @@
             <section class="dashboard-panel" aria-labelledby="system-queue-title">
               <header class="dashboard-panel__header">
                 <h3 id="system-queue-title">Queue-Verwaltung</h3>
-                <span class="dashboard-meta">Freie Slots: <strong id="system-remaining">--</strong></span>
+                <div class="panel-card__actions">
+                  <span class="dashboard-meta">Freie Slots: <strong id="system-remaining">--</strong></span>
+                  <button class="button" id="dj-start-button" type="button">DJ starten</button>
+                </div>
               </header>
               <ul class="dashboard-queue" id="system-queue" role="list" aria-live="polite"></ul>
             </section>

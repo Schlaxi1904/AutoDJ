@@ -276,13 +276,23 @@ class LibraryService:
             return str(path)
 
     def _extract_metadata(self, path: Path) -> TrackMetadata:
-        audio = self._load_audio_metadata(path)
+        tag_source = self._load_audio_metadata(path, easy=True)
+        detailed_source = None
 
-        artist = self._first_tag(audio, ["artist", "ARTIST", "TPE1", "TPE2", "albumartist"])
-        title = self._first_tag(audio, ["title", "TITLE", "TIT2"])
-        genre = self._first_tag(audio, ["genre", "GENRE", "TCON"])
-        bpm_raw = self._first_tag(audio, ["bpm", "TBPM"])
-        key_raw = self._first_tag(audio, ["initialkey", "TKEY"])
+        if tag_source is None:
+            detailed_source = self._load_audio_metadata(path, easy=False)
+            tag_source = detailed_source
+        else:
+            if self._audio_length(tag_source) is None:
+                detailed_source = self._load_audio_metadata(path, easy=False)
+
+        info_source = detailed_source or tag_source
+
+        artist = self._first_tag(tag_source, ["artist", "ARTIST", "TPE1", "TPE2", "albumartist"])
+        title = self._first_tag(tag_source, ["title", "TITLE", "TIT2"])
+        genre = self._first_tag(tag_source, ["genre", "GENRE", "TCON"])
+        bpm_raw = self._first_tag(tag_source, ["bpm", "TBPM"])
+        key_raw = self._first_tag(tag_source, ["initialkey", "TKEY"])
 
         if not artist or not title:
             fallback_artist, fallback_title = self._guess_from_filename(path)
@@ -290,11 +300,9 @@ class LibraryService:
             title = title or fallback_title
 
         duration_ms = 0
-        if audio is not None:
-            info = getattr(audio, "info", None)
-            length = getattr(info, "length", None)
-            if isinstance(length, (int, float)) and length > 0:
-                duration_ms = int(length * 1000)
+        length = self._audio_length(info_source)
+        if length is not None:
+            duration_ms = int(length * 1000)
 
         bpm = self._coerce_float(bpm_raw, default=120.0)
         key_camelot = self._normalize_key(key_raw)
@@ -313,16 +321,27 @@ class LibraryService:
             energy_avg=energy,
         )
 
-    def _load_audio_metadata(self, path: Path):
+    def _load_audio_metadata(self, path: Path, *, easy: bool):
         if MutagenFile is None:
             return None
         try:
-            return MutagenFile(path, easy=True)  # type: ignore[arg-type]
-        except Exception:  # pragma: no cover - fallback to strict parser
-            try:
-                return MutagenFile(path)  # type: ignore[call-arg]
-            except Exception:
-                return None
+            if easy:
+                return MutagenFile(path, easy=True)  # type: ignore[arg-type]
+            return MutagenFile(path)  # type: ignore[call-arg]
+        except Exception:  # pragma: no cover - mutagen edge cases
+            return None
+
+    @staticmethod
+    def _audio_length(audio) -> Optional[float]:
+        if audio is None:
+            return None
+        info = getattr(audio, "info", None)
+        if not info:
+            return None
+        length = getattr(info, "length", None)
+        if isinstance(length, (int, float)) and length > 0:
+            return float(length)
+        return None
 
     @staticmethod
     def _first_tag(audio, keys: Iterable[str]) -> Optional[str]:

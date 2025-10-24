@@ -24,6 +24,7 @@ from ..db_check import ensure_database_ready
 from ..services.admin import AdminService
 from ..services.audio_devices import AudioDeviceScanner
 from ..services.bluetooth import BluetoothDevice, BluetoothError, BluetoothManager
+from ..services.dj_brain import DjBrain
 from ..services.library import LibraryScanReport, LibraryService, LibraryState
 from ..services.playlists import PlaylistDetail, PlaylistService, PlaylistSummary
 from ..services.queue import QueueManager
@@ -98,6 +99,10 @@ def get_admin_service(
     db: Database = Depends(get_database), config: AutoDjConfig = Depends(get_config)
 ) -> AdminService:
     return AdminService(db, config)
+
+
+def get_dj_brain(config: AutoDjConfig = Depends(get_config)) -> DjBrain:
+    return DjBrain(config)
 
 
 def get_session_manager(config: AutoDjConfig = Depends(get_config)) -> SessionManager:
@@ -672,6 +677,7 @@ class SystemOverviewOut(BaseModel):
     next_entry: Optional[QueueEntryOut]
     queue_length: int
     remaining_slots: int
+    queue: List[QueueEntryOut]
     cpu_percent: Optional[float]
     memory_percent: Optional[float]
     temperature_c: Optional[float]
@@ -679,6 +685,13 @@ class SystemOverviewOut(BaseModel):
     osc_connected: bool
     network_mode: str
     toggles: SystemToggleState
+
+
+class DjStartResponse(BaseModel):
+    now_playing: Optional[QueueEntryOut]
+    queue: List[QueueEntryOut]
+    remaining_slots: int
+    message: str
 
 
 class SystemToggleUpdate(BaseModel):
@@ -1127,6 +1140,7 @@ async def admin_system_overview(
         next_entry=next_entry,
         queue_length=queue_length,
         remaining_slots=status_snapshot.remaining_slots,
+        queue=status_snapshot.entries,
         cpu_percent=host_snapshot.cpu_percent,
         memory_percent=host_snapshot.memory_percent,
         temperature_c=host_snapshot.temperature_c,
@@ -1152,6 +1166,52 @@ async def admin_update_system_toggles(
     if updates:
         settings.update_dict(_SYSTEM_TOGGLE_KEY, updates)
     return _merge_system_toggles(settings, config)
+
+
+@app.post("/admin/dj/start", response_model=DjStartResponse)
+async def admin_start_dj(
+    queue: QueueManager = Depends(get_queue_manager),
+    brain: DjBrain = Depends(get_dj_brain),
+    db: Database = Depends(get_database),
+    _: AdminUser = Depends(require_admin),
+) -> DjStartResponse:
+    status_snapshot = queue.status()
+    now_playing = next((entry for entry in status_snapshot.entries if entry.status == "playing"), None)
+    planned = False
+
+    if not now_playing:
+        has_pending = any(entry.status == "pending" for entry in status_snapshot.entries)
+        if not has_pending:
+            planned = brain.plan_next(db, queue) or planned
+        started = queue.next_track()
+        if started:
+            now_playing = started
+        else:
+            if not planned:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Keine passenden Titel verfügbar",
+                )
+            refreshed = queue.current_track()
+            if not refreshed:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="DJ konnte nicht gestartet werden",
+                )
+            now_playing = refreshed
+    else:
+        planned = brain.plan_next(db, queue) or planned
+
+    status_snapshot = queue.status()
+    current_entry = queue.current_track() or now_playing
+    message = "DJ gestartet und Queue aufgefüllt" if planned else "DJ gestartet"
+
+    return DjStartResponse(
+        now_playing=current_entry,
+        queue=status_snapshot.entries,
+        remaining_slots=status_snapshot.remaining_slots,
+        message=message,
+    )
 
 
 @app.get("/admin/audio/output", response_model=AudioOutputStateOut)

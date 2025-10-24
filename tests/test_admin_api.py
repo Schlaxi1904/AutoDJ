@@ -10,8 +10,9 @@ from fastapi.testclient import TestClient
 from urllib.parse import quote
 
 from auto_dj.config import AutoDjConfig, DatabaseConfig, PathsConfig
-from auto_dj.database.models import AdminUser
+from auto_dj.database.models import AdminUser, Track
 from auto_dj.database.session import Database
+from auto_dj.services.dj_brain import DjBrain
 from auto_dj.services.bluetooth import BluetoothDevice
 from auto_dj.services.library import LibraryService
 from auto_dj.services.playlists import PlaylistService
@@ -23,6 +24,7 @@ from auto_dj.web.app import (
     get_bluetooth_manager,
     get_config,
     get_database,
+    get_dj_brain,
     get_diagnostics_runner,
     get_library_service,
     get_playlist_service,
@@ -74,6 +76,7 @@ def admin_client(tmp_path):
         get_settings_service: lambda: settings_service,
         get_library_service: lambda: library_service,
         require_admin: lambda: admin,
+        get_dj_brain: lambda: DjBrain(config),
     }
 
     for dependency, provider in overrides.items():
@@ -85,6 +88,61 @@ def admin_client(tmp_path):
     finally:
         for dependency in list(overrides):
             app.dependency_overrides.pop(dependency, None)
+
+
+def _create_track(session, suffix: str, *, genre: str = "techno") -> Track:
+    track = Track(
+        path=f"/music/{suffix}.mp3",
+        artist=f"Artist {suffix}",
+        title=f"Track {suffix}",
+        duration_ms=180_000,
+        lufs_i=-10.5,
+        true_peak_db=-1.0,
+        bpm=128.0,
+        key_camelot="8A",
+        genre=genre,
+        energy_avg=0.7,
+        cover_path=None,
+        flags={},
+    )
+    session.add(track)
+    session.flush()
+    return track
+
+
+def test_admin_system_overview_contains_queue(admin_client):
+    client, database, _ = admin_client
+    queue_manager = app.dependency_overrides[get_queue_manager]()
+
+    with database.session() as session:
+        track = _create_track(session, "overview")
+
+    queue_manager.enqueue(track.id, "admin", None)
+
+    response = client.get("/admin/system/overview")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["queue_length"] == 1
+    assert payload["queue"][0]["track"]["id"] == track.id
+
+
+def test_admin_dj_start_promotes_pending_track(admin_client):
+    client, database, _ = admin_client
+    queue_manager = app.dependency_overrides[get_queue_manager]()
+
+    with database.session() as session:
+        first = _create_track(session, "djstart-first", genre="hardstyle")
+        second = _create_track(session, "djstart-second", genre="hardstyle")
+
+    queue_manager.enqueue(first.id, "admin", None)
+    queue_manager.enqueue(second.id, "auto", None)
+
+    response = client.post("/admin/dj/start")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["now_playing"]["track"]["id"] == first.id
+    assert any(entry["status"] == "playing" for entry in payload["queue"])
+    assert payload["message"]
 
 
 class FakeBluetoothManager:

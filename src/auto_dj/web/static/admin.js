@@ -12,6 +12,7 @@ const systemNextTrack = document.getElementById("system-next-track");
 const systemQueue = document.getElementById("system-queue");
 const systemRemaining = document.getElementById("system-remaining");
 const systemRefreshButton = document.getElementById("system-refresh");
+const djStartButton = document.getElementById("dj-start-button");
 const systemCpu = document.getElementById("system-cpu");
 const systemRam = document.getElementById("system-ram");
 const systemTemp = document.getElementById("system-temp");
@@ -1401,6 +1402,28 @@ if (tabButtons.length) {
 if (systemRefreshButton) {
   systemRefreshButton.addEventListener("click", () => {
     fetchSystemOverview();
+  });
+}
+
+if (djStartButton) {
+  djStartButton.addEventListener("click", async () => {
+    if (djStartButton.disabled) {
+      return;
+    }
+    djStartButton.disabled = true;
+    try {
+      const response = await apiFetch("/admin/dj/start", { method: "POST" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || "DJ konnte nicht gestartet werden");
+      }
+      showToast(data.message || "DJ gestartet", "success");
+      fetchSystemOverview();
+    } catch (error) {
+      showToast(error.message || "DJ konnte nicht gestartet werden", "error");
+    } finally {
+      djStartButton.disabled = false;
+    }
   });
 }
 

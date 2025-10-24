@@ -115,6 +115,8 @@ class DjBrain:
             score -= abs(current.energy_avg - candidate.energy_avg) * weights.energy
             if current.genre == candidate.genre:
                 score += weights.genre
+            else:
+                score -= weights.genre
         score += weights.request if candidate.flags.get("requested") else 0.0
         return score
 
