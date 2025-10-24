@@ -17,46 +17,38 @@ Programmierungs-Entwurf für den Auto-DJ mit Daslight-5-Integration.
 
 ```bash
 # Komplett-Bootstrap (legt virtuelle Umgebung an, installiert FastAPI & Co.,
-# richtet die Datenbank ein und prüft das Schema)
+# richtet die Datenbank ein, führt Migrationen aus und prüft das Schema)
 python3 scripts/bootstrap.py
 
-# Abhängigkeiten installieren, Datenbanktabellen erstellen und Standard-Admin anlegen
-# (legt standardmäßig den PostgreSQL-User "auto-dj" mit dem Passwort "auto-dj" an)
-#
-# Das Skript legt standardmäßig Log-Verzeichnisse unter ./logs an. Für eigene
-# Pfade können vorab z. B. gesetzt werden:
-# export AUTO_DJ_RUNTIME_LOG_ROOT="/home/pi/autodj/logs/runtime"
-# export AUTO_DJ_PERSISTENT_LOG_ROOT="/home/pi/autodj/logs/persistent"
-#
-# Falls PostgreSQL Superuser-Zugangsdaten erforderlich sind, fragt das Skript das
-# Passwort interaktiv ab. Für einen nicht-interaktiven Betrieb können die Werte
-# vorab gesetzt werden, z. B.:
-# export AUTO_DJ_SUPERUSER_PASSWORD="<PASSWORD>"
-# export AUTO_DJ_SUPERUSER_USER="postgres"
-# export AUTO_DJ_SUPERUSER_HOST="localhost"
-# export AUTO_DJ_SUPERUSER_PORT="5432"
-# export AUTO_DJ_SUPERUSER_DB="postgres"
-# (alternativ kann weiterhin AUTO_DJ_SUPERUSER_DSN gesetzt werden)
-#
-# Ist die Datenbank bereits provisioniert, kann der Rollendialog übersprungen werden:
-# export AUTO_DJ_SKIP_DB_INIT=1
+# (Alternativ) Einzelne Schritte manuell ausführen:
+# 1. Installationsskript aufrufen (legt u. a. den PostgreSQL-User "auto-dj" mit
+#    dem Passwort "auto-dj" an und erstellt Log-Verzeichnisse unter ./logs)
+#    Eigene Pfade können vorab gesetzt werden, z. B.:
+#    export AUTO_DJ_RUNTIME_LOG_ROOT="/home/pi/autodj/logs/runtime"
+#    export AUTO_DJ_PERSISTENT_LOG_ROOT="/home/pi/autodj/logs/persistent"
+#    Falls PostgreSQL-Superuser-Daten erforderlich sind, stehen sowohl die
+#    Einzelvariablen (AUTO_DJ_SUPERUSER_*) als auch AUTO_DJ_SUPERUSER_DSN zur
+#    Verfügung. Ist die Datenbank bereits provisioniert, lässt sich der
+#    Superuser-Schritt komplett überspringen:
+#    export AUTO_DJ_SKIP_DB_INIT=1
 ./scripts/install.sh
 
-# Bereits provisionierte Datenbank nur prüfen (ohne Superuser-Login)
+# 2. Virtuelle Umgebung aktivieren, damit "python" auf die Projektpakete zeigt
 source .venv/bin/activate
+
+# 3. (Optional) Bereits bestehende Datenbank nur prüfen/migrieren – ohne
+#    Superuser-Login, solange eine gültige App-DSN vorhanden ist
 export AUTO_DJ_DATABASE_DSN="postgresql://auto-dj:auto-dj@localhost:5432/auto_dj"
 export AUTO_DJ_SKIP_DB_INIT=1
 python -m auto_dj.setup --ensure-database --init-db
 
-# Virtuelle Umgebung aktivieren, damit "python" auf die projektinternen Pakete zeigt
-source .venv/bin/activate
-
-# Dienste starten (Beispiel)
+# Dienste starten (jeweils in eigener Shell oder via Prozessmanager)
 python -m auto_dj web    # Startet die Web-API (FastAPI/Uvicorn)
 python -m auto_dj engine # Startet den Audio-Engine-Skeleton
-python -m auto_dj brain  # Initialisiert die Brain-Komponenten
-# Integritätstest nach der Installation
-./scripts/system_check.py      # führt Warteschlangen-, DJ- und Bibliothekschecks durch
+python -m auto_dj brain  # Startet die Brain-Schleife inkl. Autoplay-Playlisten
+
+# Funktionstest (liefert Warnungen statt harter Fehler, wenn die Bibliothek noch leer ist)
+./scripts/system_check.py
 ```
 
 Der Installer exportiert automatisch eine `AUTO_DJ_DATABASE_DSN`, sodass sich der Python-Code
@@ -75,12 +67,13 @@ erhält die gleiche Passwort-Abfrage. Alternativ können `AUTO_DJ_SUPERUSER_DSN`
 `AUTO_DJ_SUPERUSER_PASSWORD` zur Authentifizierung gesetzt werden.
 
 Für einen regelmäßigen Funktionstest steht das Skript `scripts/system_check.py` bereit. Es prüft
-die Datenbank auf vorhandene Songs, legt testweise einen Eintrag in die Queue (inklusive
-Aufräumarbeiten) an und bewertet die DJ-Brain-Auswahl. Mit `--json` kann das Ergebnis maschinen-
-lesbar ausgegeben werden; bei Fehlern liefert das Skript einen ungleich null Exitcode. Zusätzlich
-sichert `python -m auto_dj.db_check` (beziehungsweise der automatische Startup-Check der Services)
-die Datenbankstruktur ab, führt `alembic upgrade head` aus und legt fehlende Tabellen/Indices
-nach.
+die Datenbankverbindung, zählt die gefundenen Songs, fügt testweise einen Queue-Eintrag hinzu
+(inklusive Aufräumarbeiten) und bewertet die DJ-Brain-Auswahl. Solange noch keine Musik
+analysiert wurde, erscheinen bewusst nur Warnungen, damit frische Installationen nicht
+abbrechen. Mit `--json` kann das Ergebnis maschinenlesbar ausgegeben werden; bei echten Fehlern
+liefert das Skript einen von Null abweichenden Exitcode. Zusätzlich sichert
+`python -m auto_dj.db_check` (beziehungsweise der automatische Startup-Check der Services) die
+Datenbankstruktur ab, führt `alembic upgrade head` aus und legt fehlende Tabellen/Indices nach.
 
 Der initiale Admin-Login lautet `admin` / `Admin123` und wird direkt unter dem Formular auf
 der Admin-Anmeldeseite angezeigt. Über den Link mit dem ⚙️-Symbol im Footer der Gäste-Seite
@@ -119,3 +112,6 @@ Nach erfolgreichem Login steht ein moduliertes Kontrollzentrum mit folgenden Ber
   letzte Fehlermeldung sowie Passwortpflege und Übersicht für alle Admin-Accounts.
 
 Die Gäste-Oberfläche verweist über ein dezentes ⚙️-Icon im Footer direkt auf die Admin-Anmeldung.
+Wer eine Neuinstallation von Grund auf durchführen möchte, findet mit
+`scripts/reinstall_autodj.sh` ein End-to-End-Skript, das Repository-Klon, virtuelle Umgebung,
+Bootstrap, Installation, Systemcheck und systemd-User-Service in einem Durchlauf erledigt.
