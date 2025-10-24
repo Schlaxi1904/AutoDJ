@@ -1,10 +1,15 @@
-"""Helpers for enumerating available audio output devices."""
+"""Helpers for enumerating and testing available audio output devices."""
 from __future__ import annotations
 
+import math
 import re
+import shutil
 import subprocess
+import tempfile
+import wave
 from dataclasses import dataclass
-from typing import Dict, Iterable, List
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional
 
 
 @dataclass
@@ -12,6 +17,14 @@ class AudioDevice:
     identifier: str
     label: str
     kind: str
+
+
+@dataclass
+class AudioTestResult:
+    success: bool
+    message: str
+    command: Optional[List[str]] = None
+    returncode: Optional[int] = None
 
 
 class AudioDeviceScanner:
@@ -140,7 +153,97 @@ class AudioDeviceScanner:
             return fallback
 
         return sorted(devices.values(), key=lambda dev: dev.label.lower())
+class AudioDeviceTester:
+    """Play a short test tone on a given output device."""
+
+    def __init__(self, scanner: AudioDeviceScanner | None = None) -> None:
+        self._scanner = scanner or AudioDeviceScanner()
+
+    def test(self, device_id: str) -> AudioTestResult:
+        available = {device.identifier for device in self._scanner.scan()}
+        if available and device_id not in available:
+            return AudioTestResult(False, f"Unbekanntes Gerät: {device_id}")
+
+        if shutil.which("speaker-test"):
+            return self._run_command(
+                [
+                    "speaker-test",
+                    "-D",
+                    device_id,
+                    "-c",
+                    "2",
+                    "-l",
+                    "1",
+                    "-t",
+                    "sine",
+                    "-f",
+                    "440",
+                ]
+            )
+
+        if shutil.which("aplay"):
+            return self._run_aplay(device_id)
+
+        return AudioTestResult(
+            False,
+            "Kein Testwerkzeug gefunden. Installiere 'speaker-test' oder 'aplay'.",
+        )
+
+    def _run_command(self, command: List[str]) -> AudioTestResult:
+        try:
+            completed = subprocess.run(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=6,
+                text=True,
+            )
+        except subprocess.TimeoutExpired:
+            return AudioTestResult(False, "Audiotest überschritt das Zeitlimit", command=command)
+        except FileNotFoundError:
+            return AudioTestResult(False, "Audiotest-Tool nicht gefunden", command=command)
+        except subprocess.SubprocessError as exc:
+            return AudioTestResult(False, f"Audiotest fehlgeschlagen: {exc}", command=command)
+
+        if completed.returncode == 0:
+            return AudioTestResult(True, "Audiotest erfolgreich gestartet", command=command)
+
+        message = completed.stderr.strip() or completed.stdout.strip() or "Unbekannter Fehler"
+        return AudioTestResult(
+            False,
+            f"Audiotest fehlgeschlagen: {message}",
+            command=command,
+            returncode=completed.returncode,
+        )
+
+    def _run_aplay(self, device_id: str) -> AudioTestResult:
+        with tempfile.NamedTemporaryFile("wb", suffix=".wav", delete=False) as handle:
+            tone_path = Path(handle.name)
+        try:
+            self._write_test_tone(tone_path)
+            return self._run_command(["aplay", "-q", "-D", device_id, str(tone_path)])
+        finally:
+            try:
+                tone_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    @staticmethod
+    def _write_test_tone(path: Path, duration: float = 0.5, frequency: float = 440.0) -> None:
+        samplerate = 48_000
+        amplitude = 0.4
+        total_frames = int(duration * samplerate)
+
+        with wave.open(str(path), "wb") as wav_file:
+            wav_file.setnchannels(2)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(samplerate)
+
+            for frame in range(total_frames):
+                value = amplitude * math.sin(2 * math.pi * frequency * (frame / samplerate))
+                sample = int(value * 32767)
+                wav_file.writeframes(sample.to_bytes(2, "little", signed=True) * 2)
 
 
-__all__ = ["AudioDevice", "AudioDeviceScanner"]
+__all__ = ["AudioDevice", "AudioDeviceScanner", "AudioDeviceTester", "AudioTestResult"]
 

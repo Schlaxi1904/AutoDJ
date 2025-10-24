@@ -13,6 +13,7 @@ const systemQueue = document.getElementById("system-queue");
 const systemRemaining = document.getElementById("system-remaining");
 const systemRefreshButton = document.getElementById("system-refresh");
 const djStartButton = document.getElementById("dj-start-button");
+const systemPlaybackCheck = document.getElementById("system-playback-check");
 const systemCpu = document.getElementById("system-cpu");
 const systemRam = document.getElementById("system-ram");
 const systemTemp = document.getElementById("system-temp");
@@ -30,6 +31,7 @@ const lightSuperscenesToggle = document.getElementById("light-superscenes");
 const audioScanButton = document.getElementById("audio-scan");
 const audioForm = document.getElementById("audio-output-form");
 const audioDeviceSelect = document.getElementById("audio-device-select");
+const audioTestButton = document.getElementById("audio-test");
 
 const bluetoothScanButton = document.getElementById("bluetooth-scan");
 const bluetoothRefreshButton = document.getElementById("bluetooth-refresh");
@@ -208,6 +210,11 @@ function clearSystemCards() {
   }
   if (systemRemaining) {
     systemRemaining.textContent = "--";
+  }
+  if (systemPlaybackCheck) {
+    systemPlaybackCheck.textContent = "";
+    systemPlaybackCheck.className = "system-playback";
+    systemPlaybackCheck.hidden = true;
   }
 }
 
@@ -390,6 +397,25 @@ function renderQueue(entries) {
   }
 }
 
+function renderPlaybackCheck(check) {
+  if (!systemPlaybackCheck) {
+    return;
+  }
+  systemPlaybackCheck.hidden = false;
+  systemPlaybackCheck.textContent = "";
+  systemPlaybackCheck.className = "system-playback";
+  if (!check) {
+    systemPlaybackCheck.hidden = true;
+    return;
+  }
+  const statusClass = check.success ? "system-playback--ok" : "system-playback--error";
+  systemPlaybackCheck.classList.add(statusClass);
+  const title = check.success ? "Wiedergabe bereit" : "Wiedergabeproblem";
+  systemPlaybackCheck.innerHTML = `
+    <strong>${title}:</strong> ${escapeHtml(check.message)}
+  `;
+}
+
 function updateToggleInputs(toggles) {
   togglesUpdating = true;
   if (toggleFog) {
@@ -414,6 +440,7 @@ function renderSystemOverview(data) {
   renderNowPlaying(data.now_playing);
   renderNext(data.next_entry);
   renderQueue(data.queue || []);
+  renderPlaybackCheck(data.playback_check);
   if (systemRemaining) {
     systemRemaining.textContent = data.remaining_slots;
   }
@@ -1531,6 +1558,42 @@ if (audioForm && audioDeviceSelect) {
       showToast("Audio-Gerät aktualisiert", "success");
     } catch (error) {
       showToast(error.message || "Unbekannter Fehler", "error");
+    }
+  });
+}
+
+if (audioTestButton && audioDeviceSelect) {
+  audioTestButton.addEventListener("click", async () => {
+    const deviceId = audioDeviceSelect.value;
+    if (!deviceId) {
+      showToast("Kein Ausgabegerät gewählt", "error");
+      return;
+    }
+    audioTestButton.disabled = true;
+    try {
+      const response = await apiFetch("/admin/audio/output/test", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ device_id: deviceId }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const detail = data.detail || data.message;
+        if (detail && typeof detail === "object") {
+          throw new Error(detail.message || "Audiotest fehlgeschlagen");
+        }
+        throw new Error(detail || "Audiotest fehlgeschlagen");
+      }
+      if (!data.success) {
+        throw new Error(data.message || "Audiotest fehlgeschlagen");
+      }
+      showToast(data.message || "Audiotest gestartet", "success");
+    } catch (error) {
+      showToast(error.message || "Audiotest fehlgeschlagen", "error");
+    } finally {
+      audioTestButton.disabled = false;
     }
   });
 }

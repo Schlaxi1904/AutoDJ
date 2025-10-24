@@ -66,6 +66,7 @@
                   <p class="admin-empty">Keine Wiedergabe aktiv.</p>
                 </div>
                 <div class="dashboard-next" id="system-next-track" aria-live="polite"></div>
+                <div class="system-playback" id="system-playback-check" aria-live="polite"></div>
               </article>
 
               <article class="panel-card" aria-labelledby="system-status-title">
@@ -122,7 +123,10 @@
                   <span class="input__label">Aktives Gerät</span>
                   <select id="audio-device-select" name="device_id"></select>
                 </label>
-                <button class="button" type="submit">Speichern &amp; Audio-Engine neu starten</button>
+                <div class="audio-actions">
+                  <button class="button" type="submit">Speichern &amp; Audio-Engine neu starten</button>
+                  <button class="button button--ghost" id="audio-test" type="button">Ausgang testen</button>
+                </div>
               </form>
             </article>
 

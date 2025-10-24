@@ -522,6 +522,13 @@ body {
   gap: 1rem;
 }
 
+.audio-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
 .admin-card__lead {
   margin: 0;
   color: var(--text-muted);
@@ -854,6 +861,30 @@ body {
 
 .dashboard-next strong {
   color: var(--text-primary);
+}
+
+.system-playback {
+  margin-top: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: 14px;
+  background: rgba(10, 13, 21, 0.8);
+  border: 1px solid rgba(124, 93, 250, 0.2);
+  font-size: 0.85rem;
+}
+
+.system-playback strong {
+  display: inline-block;
+  margin-right: 0.35rem;
+}
+
+.system-playback--ok {
+  border-color: rgba(82, 236, 164, 0.4);
+  color: var(--success);
+}
+
+.system-playback--error {
+  border-color: rgba(255, 101, 132, 0.4);
+  color: #ff8aa1;
 }
 
 .dashboard-panel {

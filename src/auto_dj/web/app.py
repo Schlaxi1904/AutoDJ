@@ -22,12 +22,12 @@ from ..database.models import AdminUser, QueueEntry, Track
 from ..database.session import Database
 from ..db_check import ensure_database_ready
 from ..services.admin import AdminService
-from ..services.audio_devices import AudioDeviceScanner
+from ..services.audio_devices import AudioDeviceScanner, AudioDeviceTester
 from ..services.bluetooth import BluetoothDevice, BluetoothError, BluetoothManager
 from ..services.dj_brain import DjBrain
 from ..services.library import LibraryScanReport, LibraryService, LibraryState
 from ..services.playlists import PlaylistDetail, PlaylistService, PlaylistSummary
-from ..services.queue import QueueManager
+from ..services.queue import PlaybackCheck, QueueManager
 from ..services.osc import OscService
 from ..services.settings import SettingsService
 from ..services.system import SystemMonitor
@@ -130,6 +130,12 @@ def get_system_monitor(
 
 def get_audio_device_scanner() -> AudioDeviceScanner:
     return AudioDeviceScanner()
+
+
+def get_audio_device_tester(
+    scanner: AudioDeviceScanner = Depends(get_audio_device_scanner),
+) -> AudioDeviceTester:
+    return AudioDeviceTester(scanner)
 
 
 def get_bluetooth_manager() -> BluetoothManager:
@@ -610,6 +616,7 @@ def optional_admin(
 
 class TrackOut(BaseModel):
     id: int
+    path: str
     artist: str
     title: str
     duration_ms: int
@@ -660,6 +667,14 @@ class QueueStatusOut(BaseModel):
     remaining_slots: int
 
 
+class PlaybackCheckOut(BaseModel):
+    success: bool
+    message: str
+    track: TrackOut
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class AdminDashboardStateOut(BaseModel):
     now_playing: Optional[QueueEntryOut]
     queue: List[QueueEntryOut]
@@ -685,6 +700,7 @@ class SystemOverviewOut(BaseModel):
     osc_connected: bool
     network_mode: str
     toggles: SystemToggleState
+    playback_check: Optional[PlaybackCheckOut] = None
 
 
 class DjStartResponse(BaseModel):
@@ -692,6 +708,7 @@ class DjStartResponse(BaseModel):
     queue: List[QueueEntryOut]
     remaining_slots: int
     message: str
+    playback_check: Optional[PlaybackCheckOut] = None
 
 
 class SystemToggleUpdate(BaseModel):
@@ -713,6 +730,16 @@ class AudioOutputStateOut(BaseModel):
 
 class AudioOutputUpdate(BaseModel):
     device_id: str
+
+
+class AudioOutputTestRequest(BaseModel):
+    device_id: Optional[str] = None
+
+
+class AudioOutputTestResponse(BaseModel):
+    success: bool
+    message: str
+    command: Optional[List[str]] = None
 
 
 class BluetoothDeviceOut(BaseModel):
@@ -1134,6 +1161,7 @@ async def admin_system_overview(
     )
     queue_length = len(status_snapshot.entries)
     host_snapshot = monitor.snapshot()
+    playback_check = queue.check_playback_ready(now_playing)
 
     return SystemOverviewOut(
         now_playing=now_playing,
@@ -1148,6 +1176,7 @@ async def admin_system_overview(
         osc_connected=host_snapshot.osc_connected,
         network_mode=_network_mode_label(config, toggles),
         toggles=toggles,
+        playback_check=playback_check,
     )
 
 
@@ -1205,12 +1234,14 @@ async def admin_start_dj(
     status_snapshot = queue.status()
     current_entry = queue.current_track() or now_playing
     message = "DJ gestartet und Queue aufgefüllt" if planned else "DJ gestartet"
+    playback_check = queue.check_playback_ready(current_entry)
 
     return DjStartResponse(
         now_playing=current_entry,
         queue=status_snapshot.entries,
         remaining_slots=status_snapshot.remaining_slots,
         message=message,
+        playback_check=playback_check,
     )
 
 
@@ -1241,6 +1272,38 @@ async def admin_update_audio_output(
     settings.set(_AUDIO_OUTPUT_KEY, {"device_id": payload.device_id})
     devices = [AudioDeviceOut(**device.__dict__) for device in scanner.scan()]
     return AudioOutputStateOut(active_device_id=payload.device_id, devices=devices)
+
+
+@app.post("/admin/audio/output/test", response_model=AudioOutputTestResponse)
+async def admin_test_audio_output(
+    payload: AudioOutputTestRequest,
+    tester: AudioDeviceTester = Depends(get_audio_device_tester),
+    settings: SettingsService = Depends(get_settings_service),
+    _: AdminUser = Depends(require_admin),
+) -> AudioOutputTestResponse:
+    stored = settings.get_dict(_AUDIO_OUTPUT_KEY, {})
+    device_id = payload.device_id
+    if not device_id and isinstance(stored, dict):
+        device_id = stored.get("device_id")
+    if not device_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Kein Ausgabegerät ausgewählt",
+        )
+
+    result = tester.test(device_id)
+    if not result.success:
+        detail: Dict[str, object] = {"message": result.message}
+        if result.command:
+            detail["command"] = result.command
+        if result.returncode is not None:
+            detail["returncode"] = result.returncode
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=detail,
+        )
+
+    return AudioOutputTestResponse(success=True, message=result.message, command=result.command)
 
 
 @app.get("/admin/audio/bluetooth", response_model=BluetoothScanOut)

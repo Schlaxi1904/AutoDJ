@@ -12,6 +12,7 @@ from urllib.parse import quote
 from auto_dj.config import AutoDjConfig, DatabaseConfig, PathsConfig
 from auto_dj.database.models import AdminUser, Track
 from auto_dj.database.session import Database
+from auto_dj.services.audio_devices import AudioDevice, AudioTestResult
 from auto_dj.services.dj_brain import DjBrain
 from auto_dj.services.bluetooth import BluetoothDevice
 from auto_dj.services.library import LibraryService
@@ -21,6 +22,8 @@ from auto_dj.services.settings import SettingsService
 from auto_dj.tools.diagnostics import DiagnosticResult
 from auto_dj.web.app import (
     app,
+    get_audio_device_scanner,
+    get_audio_device_tester,
     get_bluetooth_manager,
     get_config,
     get_database,
@@ -53,11 +56,28 @@ def admin_client(tmp_path):
     config = build_config(tmp_path)
     database = Database(config.database)
     database.create_all()
+    config.paths.music_root.mkdir(parents=True, exist_ok=True)
 
     playlist_service = PlaylistService(database)
     queue_manager = QueueManager(database, config.queue_policy, playlist_service)
     settings_service = SettingsService(database)
     library_service = LibraryService(database, config, settings_service)
+    audio_devices = [AudioDevice("hw:1", "USB Interface", "alsa")]
+
+    class FakeAudioScanner:
+        def scan(self):
+            return list(audio_devices)
+
+    class FakeAudioTester:
+        def __init__(self) -> None:
+            self.last_device = None
+            self.should_fail = False
+
+        def test(self, device_id: str) -> AudioTestResult:
+            self.last_device = device_id
+            if self.should_fail:
+                return AudioTestResult(False, "Fehler beim Test")
+            return AudioTestResult(True, "Test erfolgreich", command=["speaker-test"])
 
     admin = AdminUser(
         id=1,
@@ -68,6 +88,9 @@ def admin_client(tmp_path):
         last_login_at=None,
     )
 
+    fake_scanner = FakeAudioScanner()
+    fake_tester = FakeAudioTester()
+
     overrides = {
         get_config: lambda: config,
         get_database: lambda: database,
@@ -77,6 +100,8 @@ def admin_client(tmp_path):
         get_library_service: lambda: library_service,
         require_admin: lambda: admin,
         get_dj_brain: lambda: DjBrain(config),
+        get_audio_device_scanner: lambda: fake_scanner,
+        get_audio_device_tester: lambda: fake_tester,
     }
 
     for dependency, provider in overrides.items():
@@ -84,15 +109,18 @@ def admin_client(tmp_path):
 
     try:
         with TestClient(app) as client:
-            yield client, database, config
+            yield client, database, config, fake_tester
     finally:
         for dependency in list(overrides):
             app.dependency_overrides.pop(dependency, None)
 
 
-def _create_track(session, suffix: str, *, genre: str = "techno") -> Track:
+def _create_track(session, suffix: str, music_root: Path, *, genre: str = "techno") -> Track:
+    file_path = music_root / f"{suffix}.flac"
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    file_path.write_bytes(b"test")
     track = Track(
-        path=f"/music/{suffix}.mp3",
+        path=str(file_path),
         artist=f"Artist {suffix}",
         title=f"Track {suffix}",
         duration_ms=180_000,
@@ -111,11 +139,11 @@ def _create_track(session, suffix: str, *, genre: str = "techno") -> Track:
 
 
 def test_admin_system_overview_contains_queue(admin_client):
-    client, database, _ = admin_client
+    client, database, config, _ = admin_client
     queue_manager = app.dependency_overrides[get_queue_manager]()
 
     with database.session() as session:
-        track = _create_track(session, "overview")
+        track = _create_track(session, "overview", config.paths.music_root)
 
     queue_manager.enqueue(track.id, "admin", None)
 
@@ -124,15 +152,16 @@ def test_admin_system_overview_contains_queue(admin_client):
     payload = response.json()
     assert payload["queue_length"] == 1
     assert payload["queue"][0]["track"]["id"] == track.id
+    assert payload["playback_check"] is None
 
 
 def test_admin_dj_start_promotes_pending_track(admin_client):
-    client, database, _ = admin_client
+    client, database, config, _ = admin_client
     queue_manager = app.dependency_overrides[get_queue_manager]()
 
     with database.session() as session:
-        first = _create_track(session, "djstart-first", genre="hardstyle")
-        second = _create_track(session, "djstart-second", genre="hardstyle")
+        first = _create_track(session, "djstart-first", config.paths.music_root, genre="hardstyle")
+        second = _create_track(session, "djstart-second", config.paths.music_root, genre="hardstyle")
 
     queue_manager.enqueue(first.id, "admin", None)
     queue_manager.enqueue(second.id, "auto", None)
@@ -143,6 +172,34 @@ def test_admin_dj_start_promotes_pending_track(admin_client):
     assert payload["now_playing"]["track"]["id"] == first.id
     assert any(entry["status"] == "playing" for entry in payload["queue"])
     assert payload["message"]
+    assert payload["playback_check"]["success"] is True
+
+
+def test_admin_audio_output_test_success(admin_client):
+    client, database, config, tester = admin_client
+
+    response = client.post("/admin/audio/output", json={"device_id": "hw:1"})
+    assert response.status_code == 200
+
+    tester.should_fail = False
+    response = client.post("/admin/audio/output/test", json={"device_id": "hw:1"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["message"]
+    assert tester.last_device == "hw:1"
+
+
+def test_admin_audio_output_test_failure(admin_client):
+    client, database, config, tester = admin_client
+
+    client.post("/admin/audio/output", json={"device_id": "hw:1"})
+
+    tester.should_fail = True
+    response = client.post("/admin/audio/output/test", json={"device_id": "hw:1"})
+    assert response.status_code == 503
+    payload = response.json()
+    assert "detail" in payload
 
 
 class FakeBluetoothManager:

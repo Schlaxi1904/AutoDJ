@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import List, Optional
 
 from sqlalchemy import func
@@ -11,8 +12,8 @@ from sqlalchemy.orm import selectinload
 
 from ..config import QueuePolicy
 from ..database.models import QueueEntry, Track
-from .playlists import PlaylistService
 from ..database.session import Database
+from .playlists import PlaylistService
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class QueueTrackSnapshot:
     id: int
+    path: str
     artist: str
     title: str
     duration_ms: int
@@ -44,6 +46,13 @@ class QueueEntrySnapshot:
 class QueueStatus:
     entries: List[QueueEntrySnapshot]
     remaining_slots: int
+
+
+@dataclass
+class PlaybackCheck:
+    success: bool
+    message: str
+    track: QueueTrackSnapshot
 
 
 class QueueManager:
@@ -140,6 +149,29 @@ class QueueManager:
             )
             return _snapshot_entry(entry) if entry else None
 
+    def check_playback_ready(
+        self, entry: Optional[QueueEntrySnapshot] = None
+    ) -> Optional[PlaybackCheck]:
+        """Validate that the playing track can be accessed on disk."""
+
+        snapshot = entry or self.current_track()
+        if not snapshot:
+            return None
+
+        track = snapshot.track
+        path = Path(track.path)
+        if not path.exists():
+            return PlaybackCheck(False, f"Datei nicht gefunden: {path}", track)
+        if not path.is_file():
+            return PlaybackCheck(False, f"Pfad ist keine Audiodatei: {path}", track)
+        try:
+            size = path.stat().st_size
+        except OSError as exc:  # pragma: no cover - platform specific
+            return PlaybackCheck(False, f"Datei nicht lesbar: {exc}", track)
+        if size <= 0:
+            return PlaybackCheck(False, f"Datei ist leer: {path}", track)
+        return PlaybackCheck(True, "Titel kann abgespielt werden", track)
+
     def remove(self, entry_id: int) -> None:
         """Remove an entry from the queue."""
 
@@ -190,6 +222,7 @@ def _snapshot_entry(entry: QueueEntry) -> QueueEntrySnapshot:
     track = entry.track
     track_snapshot = QueueTrackSnapshot(
         id=track.id,
+        path=track.path,
         artist=track.artist,
         title=track.title,
         duration_ms=track.duration_ms,
