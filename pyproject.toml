@@ -23,6 +23,16 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["black", "ruff"]
 
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"auto_dj" = [
+    "web/templates/*.html",
+    "web/static/*",
+    "web/static/**/*",
+]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
